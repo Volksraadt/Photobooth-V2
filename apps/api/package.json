@@ -1,0 +1,25 @@
+{
+  "name": "@pb/api",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Hono API: device endpoints, webhooks, short links",
+  "dependencies": {
+    "@hono/node-server": "^2.1.11",
+    "@pb/crypto": "workspace:*",
+    "@pb/db": "workspace:*",
+    "@pb/schema": "workspace:*",
+    "drizzle-orm": "^0.45.4",
+    "hono": "^4.13.20"
+  },
+  "exports": {
+    ".": "./src/app.ts"
+  },
+  "scripts": {
+    "dev": "tsx watch src/index.ts",
+    "start": "tsx src/index.ts",
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "lint": "eslint src",
+    "test": "vitest run"
+  }
+}

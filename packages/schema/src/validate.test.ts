@@ -1,0 +1,307 @@
+import { createHash } from 'node:crypto';
+import { describe, expect, it } from 'vitest';
+import {
+  createDefaultBoothConfig,
+  DEFAULT_STRIP_OVERLAY_SHA256,
+  DEFAULT_STRIP_OVERLAY_SVG,
+  generateSessionCode,
+  isSessionCode,
+  migrateBoothConfig,
+  validateBoothConfig,
+  type BoothConfig,
+  type ValidationIssue,
+} from './index';
+
+const fresh = (): BoothConfig =>
+  createDefaultBoothConfig({ boothId: 'booth_test', boothName: 'Tes' });
+
+function issuesOf(config: unknown): ValidationIssue[] {
+  const result = validateBoothConfig(config);
+  return result.success ? [] : result.issues;
+}
+
+describe('createDefaultBoothConfig', () => {
+  it('produces a config that passes validateBoothConfig', () => {
+    const result = validateBoothConfig(fresh());
+    expect(result.issues).toEqual([]);
+    expect(result.success).toBe(true);
+  });
+
+  it('has 1 frame with 4 slots, 3 filters, all 9 pages', () => {
+    const config = fresh();
+    expect(config.frames).toHaveLength(1);
+    expect(config.frames[0]!.slots).toHaveLength(4);
+    expect(config.filters).toHaveLength(3);
+    expect(config.filters.filter((f) => f.isDefault)).toHaveLength(1);
+    expect(Object.keys(config.pages).sort()).toEqual([
+      'capture',
+      'cover',
+      'error',
+      'framePick',
+      'payment',
+      'processing',
+      'result',
+      'review',
+      'tutorial',
+    ]);
+    expect(config.configVersion).toBe(0);
+  });
+
+  it('is serialisable to JSON and still valid after a round trip', () => {
+    const roundTrip = JSON.parse(JSON.stringify(fresh())) as unknown;
+    expect(validateBoothConfig(roundTrip).success).toBe(true);
+  });
+
+  it('uses unique element ids', () => {
+    const config = fresh();
+    const ids = Object.values(config.pages).flatMap((p) => [
+      ...p.elements.map((e) => e.id),
+      ...(p.slides ?? []).flatMap((s) => [s.id, ...s.elements.map((e) => e.id)]),
+    ]);
+    expect(new Set(ids).size).toBe(ids.length);
+  });
+
+  it('embeds the built-in overlay with a correct sha256', () => {
+    const hash = createHash('sha256').update(DEFAULT_STRIP_OVERLAY_SVG).digest('hex');
+    expect(hash).toBe(DEFAULT_STRIP_OVERLAY_SHA256);
+    const asset = fresh().assets[0]!;
+    const decoded = Buffer.from(asset.url.split(',')[1]!, 'base64').toString('utf8');
+    expect(decoded).toBe(DEFAULT_STRIP_OVERLAY_SVG);
+    expect(asset.bytes).toBe(Buffer.byteLength(DEFAULT_STRIP_OVERLAY_SVG));
+  });
+});
+
+describe('validateBoothConfig — page rules', () => {
+  it('fails with a clear message when capture has no camera-view', () => {
+    const config = fresh();
+    config.pages.capture.elements = config.pages.capture.elements.filter(
+      (e) => e.type !== 'camera-view',
+    );
+    const result = validateBoothConfig(config);
+    expect(result.success).toBe(false);
+    const issue = issuesOf(config).find((i) => i.code === 'capture.camera-view.count');
+    expect(issue).toBeDefined();
+    expect(issue!.path).toBe('pages.capture.elements');
+    expect(issue!.message).toBe(
+      'Halaman Capture harus punya tepat satu elemen camera-view (ditemukan 0).',
+    );
+  });
+
+  it('rejects two camera-views', () => {
+    const config = fresh();
+    const cam = config.pages.capture.elements.find((e) => e.type === 'camera-view')!;
+    config.pages.capture.elements.push({ ...cam, id: 'cam2' });
+    expect(issuesOf(config).map((i) => i.code)).toContain('capture.camera-view.count');
+  });
+
+  it('requires photo-slot count to match the largest enabled frame', () => {
+    const config = fresh();
+    config.pages.capture.elements = config.pages.capture.elements.filter(
+      (e) => !(e.type === 'photo-slot' && e.slotIndex === 4),
+    );
+    expect(issuesOf(config).map((i) => i.code)).toContain('capture.photo-slot.count');
+  });
+
+  it('requires a countdown on capture', () => {
+    const config = fresh();
+    config.pages.capture.elements = config.pages.capture.elements.filter(
+      (e) => e.type !== 'countdown',
+    );
+    expect(issuesOf(config).map((i) => i.code)).toContain('capture.countdown.count');
+  });
+
+  it('requires qris only when qris is enabled', () => {
+    const config = fresh();
+    config.pages.payment.elements = config.pages.payment.elements.filter(
+      (e) =>
+        e.type !== 'qris' &&
+        !(e.type === 'button' && e.action.kind === 'selectPayment' && e.action.method === 'qris'),
+    );
+    expect(issuesOf(config).map((i) => i.code)).toContain('payment.qris.count');
+    config.flow.paymentMethods = ['voucher', 'cash'];
+    expect(validateBoothConfig(config).success).toBe(true);
+  });
+
+  it('requires voucher-input when voucher is enabled', () => {
+    const config = fresh();
+    config.pages.payment.elements = config.pages.payment.elements.filter(
+      (e) => e.type !== 'voucher-input',
+    );
+    expect(issuesOf(config).map((i) => i.code)).toContain('payment.voucher-input.count');
+  });
+
+  it('skips payment rules in event mode', () => {
+    const config = fresh();
+    config.flow.eventMode = true;
+    config.flow.paymentMethods = [];
+    config.pages.payment.elements = [];
+    expect(validateBoothConfig(config).success).toBe(true);
+  });
+
+  it('requires a frame-picker on framePick', () => {
+    const config = fresh();
+    config.pages.framePick.elements = config.pages.framePick.elements.filter(
+      (e) => e.type !== 'frame-picker',
+    );
+    expect(issuesOf(config).map((i) => i.code)).toContain('framePick.frame-picker.count');
+  });
+
+  it('requires filter-picker on review only when more than one filter is enabled', () => {
+    const config = fresh();
+    config.pages.review.elements = config.pages.review.elements.filter(
+      (e) => e.type !== 'filter-picker',
+    );
+    expect(issuesOf(config).map((i) => i.code)).toContain('review.filter-picker.count');
+    config.filters = config.filters.map((f) => ({ ...f, enabled: f.isDefault }));
+    expect(validateBoothConfig(config).success).toBe(true);
+  });
+
+  it('skips review rules when review is disabled', () => {
+    const config = fresh();
+    config.flow.reviewEnabled = false;
+    config.pages.review.elements = [];
+    expect(validateBoothConfig(config).success).toBe(true);
+  });
+
+  it('requires a download-qr on result', () => {
+    const config = fresh();
+    config.pages.result.elements = config.pages.result.elements.filter(
+      (e) => e.type !== 'download-qr',
+    );
+    expect(issuesOf(config).map((i) => i.code)).toContain('result.download-qr.count');
+  });
+
+  it('requires an exit on every page except processing and result', () => {
+    const config = fresh();
+    config.pages.cover.elements = config.pages.cover.elements.filter((e) => e.type !== 'button');
+    const issue = issuesOf(config).find((i) => i.code === 'cover.no-exit');
+    expect(issue?.message).toMatch(/tidak punya jalan keluar/);
+  });
+
+  it('accepts a tutorial without buttons when every slide auto-advances', () => {
+    const config = fresh();
+    config.pages.tutorial.elements = [];
+    expect(validateBoothConfig(config).success).toBe(true);
+    delete config.pages.tutorial.slides![0]!.durationSec;
+    expect(issuesOf(config).map((i) => i.code)).toContain('tutorial.no-exit');
+  });
+
+  it('rejects special elements on the wrong page', () => {
+    const config = fresh();
+    const qr = config.pages.result.elements.find((e) => e.type === 'download-qr')!;
+    config.pages.cover.elements.push({ ...qr, id: 'qr-on-cover' });
+    const issue = issuesOf(config).find((i) => i.code === 'element.wrong-page');
+    expect(issue?.path).toBe(`pages.cover.elements.${config.pages.cover.elements.length - 1}`);
+  });
+
+  it('rejects page key / type mismatch', () => {
+    const config = fresh();
+    config.pages.cover.type = 'error';
+    expect(issuesOf(config).map((i) => i.code)).toContain('page.type-mismatch');
+  });
+
+  it('rejects duplicate element ids on a page', () => {
+    const config = fresh();
+    const [a, b] = config.pages.cover.elements;
+    b!.id = a!.id;
+    expect(issuesOf(config).map((i) => i.code)).toContain('element.duplicate-id');
+  });
+});
+
+describe('validateBoothConfig — references & structure', () => {
+  it('reports schema errors with a dotted path', () => {
+    const config = fresh() as unknown as { artboard: { width: unknown } };
+    config.artboard.width = 'wide';
+    const issue = issuesOf(config)[0]!;
+    expect(issue.path).toBe('artboard.width');
+    expect(issue.code).toMatch(/^schema\./);
+  });
+
+  it('rejects a missing page', () => {
+    const config = fresh() as unknown as { pages: Record<string, unknown> };
+    delete config.pages.error;
+    expect(issuesOf(config).some((i) => i.path === 'pages.error')).toBe(true);
+  });
+
+  it('rejects unknown asset references', () => {
+    const config = fresh();
+    config.frames[0]!.overlayAssetId = 'nope';
+    expect(issuesOf(config).map((i) => i.code)).toContain('asset.missing');
+  });
+
+  it('rejects asset of the wrong kind', () => {
+    const config = fresh();
+    config.assets[0]!.kind = 'font';
+    expect(issuesOf(config).map((i) => i.code)).toContain('asset.wrong-kind');
+  });
+
+  it('requires exactly one enabled default filter', () => {
+    const config = fresh();
+    config.filters[1]!.isDefault = true;
+    expect(issuesOf(config).map((i) => i.code)).toContain('filter.default-count');
+    config.filters[1]!.isDefault = false;
+    config.filters[0]!.enabled = false;
+    expect(issuesOf(config).map((i) => i.code)).toContain('filter.default-disabled');
+  });
+
+  it('requires at least one enabled frame', () => {
+    const config = fresh();
+    config.frames[0]!.enabled = false;
+    expect(issuesOf(config).map((i) => i.code)).toContain('frame.none-enabled');
+  });
+
+  it('rejects non-contiguous slot indices and out-of-bounds slots', () => {
+    const config = fresh();
+    config.frames[0]!.slots[3]!.index = 7;
+    config.frames[0]!.slots[0]!.width = 9999;
+    const codes = issuesOf(config).map((i) => i.code);
+    expect(codes).toContain('frame.slot-index');
+    expect(codes).toContain('frame.slot-out-of-bounds');
+  });
+
+  it('rejects selectFilter buttons pointing to unknown filters', () => {
+    const config = fresh();
+    const btn = config.pages.review.elements.find((e) => e.type === 'button')!;
+    config.pages.review.elements.push({
+      ...btn,
+      id: 'sf',
+      action: { kind: 'selectFilter', filterId: 'ghost' },
+    } as typeof btn);
+    expect(issuesOf(config).map((i) => i.code)).toContain('button.unknown-filter');
+  });
+
+  it('rejects an empty payment method list outside event mode', () => {
+    const config = fresh();
+    config.flow.paymentMethods = [];
+    expect(issuesOf(config).map((i) => i.code)).toContain('flow.payment-methods-empty');
+  });
+
+  it('rejects unknown timezones', () => {
+    const config = fresh();
+    config.timezone = 'Mars/Olympus';
+    expect(issuesOf(config).some((i) => i.path === 'timezone')).toBe(true);
+  });
+});
+
+describe('migrateBoothConfig', () => {
+  it('passes current-version configs through validation', () => {
+    expect(migrateBoothConfig(fresh()).success).toBe(true);
+  });
+
+  it('rejects future schema versions', () => {
+    const result = migrateBoothConfig({ ...fresh(), schemaVersion: 99 });
+    expect(result.success).toBe(false);
+    expect(result.success ? [] : result.issues[0]!.code).toBe('schema.version-unsupported');
+  });
+});
+
+describe('session codes', () => {
+  it('generates 8-char codes without ambiguous characters', () => {
+    for (let i = 0; i < 200; i++) {
+      const code = generateSessionCode();
+      expect(isSessionCode(code)).toBe(true);
+      expect(code).not.toMatch(/[01OI]/);
+    }
+    expect(isSessionCode('ABCD1234')).toBe(false);
+  });
+});

@@ -1,0 +1,223 @@
+import { z } from 'zod';
+import {
+  BoxStyleSchema,
+  ColorSchema,
+  ElementAnimationSchema,
+  IdSchema,
+  NonNegative,
+  TextStyleSchema,
+} from './common';
+
+export const PaymentMethodSchema = z.enum(['qris', 'voucher', 'cash']);
+export type PaymentMethod = z.infer<typeof PaymentMethodSchema>;
+
+export const ButtonActionSchema = z.discriminatedUnion('kind', [
+  z.object({ kind: z.literal('start') }),
+  z.object({ kind: z.literal('next') }),
+  z.object({ kind: z.literal('back') }),
+  z.object({ kind: z.literal('retake'), shotIndex: z.number().int().min(1).optional() }),
+  z.object({ kind: z.literal('retakeAll') }),
+  z.object({ kind: z.literal('confirm') }),
+  z.object({ kind: z.literal('selectFilter'), filterId: IdSchema }),
+  z.object({ kind: z.literal('addPrint') }),
+  z.object({ kind: z.literal('removePrint') }),
+  z.object({ kind: z.literal('selectPayment'), method: PaymentMethodSchema }),
+  z.object({ kind: z.literal('finish') }),
+]);
+export type ButtonAction = z.infer<typeof ButtonActionSchema>;
+export type ButtonActionKind = ButtonAction['kind'];
+
+export const BaseElementSchema = z.object({
+  id: IdSchema,
+  name: z.string().max(120),
+  x: z.number().finite(),
+  y: z.number().finite(),
+  width: z.number().finite().positive(),
+  height: z.number().finite().positive(),
+  rotation: z.number().finite(),
+  opacity: z.number().min(0).max(1),
+  visible: z.boolean(),
+  locked: z.boolean(),
+  groupId: IdSchema.optional(),
+  style: BoxStyleSchema.optional(),
+  animation: ElementAnimationSchema.optional(),
+});
+export type BaseElement = z.infer<typeof BaseElementSchema>;
+
+// --- Static & interactive ---
+
+export const ImageElementSchema = BaseElementSchema.extend({
+  type: z.literal('image'),
+  assetId: IdSchema,
+  fit: z.enum(['cover', 'contain', 'fill']),
+});
+
+export const TextElementSchema = BaseElementSchema.extend({
+  type: z.literal('text'),
+  /** Supports tokens {{price}}, {{boothName}}, {{date}}. */
+  content: z.string().max(2000),
+  ...TextStyleSchema.shape,
+});
+
+export const ShapeElementSchema = BaseElementSchema.extend({
+  type: z.literal('shape'),
+  shape: z.enum(['rect', 'ellipse', 'line']),
+});
+
+export const VideoElementSchema = BaseElementSchema.extend({
+  type: z.literal('video'),
+  assetId: IdSchema,
+  loop: z.boolean(),
+  muted: z.boolean(),
+});
+
+export const ButtonElementSchema = BaseElementSchema.extend({
+  type: z.literal('button'),
+  action: ButtonActionSchema,
+  label: z.string().max(200).optional(),
+  /** Image button: asset drawn instead of the box style. */
+  assetId: IdSchema.optional(),
+  textStyle: TextStyleSchema.optional(),
+  pressedStyle: BoxStyleSchema.optional(),
+});
+
+// --- Flow-bound special elements ---
+
+export const CameraViewElementSchema = BaseElementSchema.extend({
+  type: z.literal('camera-view'),
+  mirror: z.boolean(),
+  fit: z.enum(['cover', 'contain']),
+  /** Show the crop guide of the slot currently being captured. */
+  cropAspect: z.boolean().optional(),
+  overlayFrame: z.boolean(),
+});
+
+export const PhotoSlotEmptyStyleSchema = BoxStyleSchema.extend({
+  showNumber: z.boolean(),
+  numberColor: ColorSchema,
+  numberFontFamily: z.string().min(1),
+  numberFontSize: z.number().positive(),
+});
+
+export const PhotoSlotElementSchema = BaseElementSchema.extend({
+  type: z.literal('photo-slot'),
+  slotIndex: z.number().int().min(1),
+  emptyStyle: PhotoSlotEmptyStyleSchema,
+  filledStyle: BoxStyleSchema,
+  activeStyle: BoxStyleSchema,
+  showRetakeButton: z.boolean(),
+});
+
+export const CountdownElementSchema = BaseElementSchema.extend({
+  type: z.literal('countdown'),
+  fontFamily: z.string().min(1),
+  fontSize: z.number().positive(),
+  color: ColorSchema,
+  variant: z.enum(['number', 'ring']),
+});
+
+export const FramePickerElementSchema = BaseElementSchema.extend({
+  type: z.literal('frame-picker'),
+  layout: z.enum(['grid', 'carousel']),
+  columns: z.number().int().min(1).max(12),
+  gap: NonNegative,
+  itemStyle: BoxStyleSchema,
+  selectedStyle: BoxStyleSchema,
+  showPrice: z.boolean(),
+  showName: z.boolean(),
+  labelStyle: TextStyleSchema.optional(),
+});
+
+export const FramePreviewElementSchema = BaseElementSchema.extend({
+  type: z.literal('frame-preview'),
+  fit: z.enum(['contain', 'cover']),
+});
+
+export const FilterPickerElementSchema = BaseElementSchema.extend({
+  type: z.literal('filter-picker'),
+  layout: z.enum(['row', 'grid']),
+  itemSize: z.number().positive(),
+  showLabel: z.boolean(),
+  selectedStyle: BoxStyleSchema,
+  labelStyle: TextStyleSchema.optional(),
+});
+
+export const QrisElementSchema = BaseElementSchema.extend({
+  type: z.literal('qris'),
+  padding: NonNegative,
+  background: ColorSchema,
+  showLogo: z.boolean(),
+});
+
+export const PriceLabelElementSchema = BaseElementSchema.extend({
+  type: z.literal('price-label'),
+  /** idr = "Rp 35.000", number = "35.000". */
+  format: z.enum(['idr', 'number']),
+  ...TextStyleSchema.shape,
+});
+
+export const PaymentTimerElementSchema = BaseElementSchema.extend({
+  type: z.literal('payment-timer'),
+  variant: z.enum(['text', 'bar']),
+  textStyle: TextStyleSchema.optional(),
+  barColor: ColorSchema.optional(),
+  trackColor: ColorSchema.optional(),
+});
+
+export const VoucherInputElementSchema = BaseElementSchema.extend({
+  type: z.literal('voucher-input'),
+  variant: z.enum(['keypad', 'field']),
+  textStyle: TextStyleSchema,
+  keyStyle: BoxStyleSchema.optional(),
+});
+
+export const DownloadQrElementSchema = BaseElementSchema.extend({
+  type: z.literal('download-qr'),
+  padding: NonNegative,
+  foreground: ColorSchema,
+  background: ColorSchema,
+});
+
+export const ProgressElementSchema = BaseElementSchema.extend({
+  type: z.literal('progress'),
+  variant: z.enum(['bar', 'spinner', 'steps']),
+  color: ColorSchema,
+  trackColor: ColorSchema.optional(),
+});
+
+export const PrintCopiesElementSchema = BaseElementSchema.extend({
+  type: z.literal('print-copies'),
+  textStyle: TextStyleSchema,
+  buttonStyle: BoxStyleSchema.optional(),
+});
+
+export const ElementSchema = z.discriminatedUnion('type', [
+  ImageElementSchema,
+  TextElementSchema,
+  ShapeElementSchema,
+  VideoElementSchema,
+  ButtonElementSchema,
+  CameraViewElementSchema,
+  PhotoSlotElementSchema,
+  CountdownElementSchema,
+  FramePickerElementSchema,
+  FramePreviewElementSchema,
+  FilterPickerElementSchema,
+  QrisElementSchema,
+  PriceLabelElementSchema,
+  PaymentTimerElementSchema,
+  VoucherInputElementSchema,
+  DownloadQrElementSchema,
+  ProgressElementSchema,
+  PrintCopiesElementSchema,
+]);
+export type Element = z.infer<typeof ElementSchema>;
+export type ElementType = Element['type'];
+export type ElementOf<T extends ElementType> = Extract<Element, { type: T }>;
+
+export const STATIC_ELEMENT_TYPES = [
+  'image',
+  'text',
+  'shape',
+  'video',
+] as const satisfies readonly ElementType[];

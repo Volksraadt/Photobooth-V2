@@ -1,0 +1,15 @@
+{
+  "name": "@pb/renderer",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "React DOM renderer for booth pages",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "lint": "eslint src",
+    "test": "vitest run --passWithNoTests"
+  }
+}
