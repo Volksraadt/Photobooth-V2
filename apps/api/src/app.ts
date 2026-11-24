@@ -6,6 +6,7 @@ import { HTTPException } from 'hono/http-exception';
 import { AccessTokenCache } from '@pb/drive';
 import { MemoryStorage } from '@pb/storage';
 import { DISABLED_BILLING } from './billing/gateway';
+import { RateLimiter, rateLimit } from './middleware/rate-limit';
 import { DeviceSignals } from './payments/device-signals';
 import { createPaymentGateway } from './payments/gateway';
 import { deviceRoutes, pairRoutes } from './routes/device-routes';
@@ -36,6 +37,7 @@ export function createApp(input: AppDeps) {
     studioUrl: input.studioUrl ?? 'http://localhost:3000',
     billing: input.billing ?? DISABLED_BILLING,
     platformAdmins: (input.platformAdmins ?? []).map((e) => e.trim().toLowerCase()),
+    rateLimiter: input.rateLimiter ?? new RateLimiter(),
   };
   const app = new Hono<AppEnv>();
 
@@ -69,6 +71,14 @@ export function createApp(input: AppDeps) {
   });
   app.use('/device/*', kioskCors);
   app.use('/pair/*', kioskCors);
+
+  // Unauthenticated endpoints get per-IP limits (audit S2). Generous enough for many kiosks
+  // behind one venue NAT: a pairing kiosk polls /pair/status every 2 s and restarts every 10 min.
+  app.use('/pair/start', rateLimit('pair-start', 20, 10 * 60_000));
+  app.use('/pair/status', rateLimit('pair-status', 600, 60_000));
+  app.use('/webhooks/*', rateLimit('webhooks', 600, 60_000));
+  app.use('/oauth/*', rateLimit('oauth', 30, 60_000));
+  app.use('/s/*', rateLimit('short-link', 120, 60_000));
 
   app.get('/health', async (c) => {
     let db: 'ok' | 'error' = 'ok';

@@ -177,6 +177,8 @@ export const flowMachine = setup({
         : context.config.flow.qrisExpirySec * 1000;
     },
     resultReturn: ({ context }) => context.config.flow.resultAutoReturnSec * 1000,
+    offlinePaymentConfirm: ({ context }) => context.timings.offlinePaymentConfirmMs,
+    paymentVerify: ({ context }) => context.timings.paymentVerifyMs,
   },
   guards: {
     tutorialEnabled: ({ context }) => context.config.flow.tutorialEnabled,
@@ -193,6 +195,8 @@ export const flowMachine = setup({
     isOnline: ({ context }) => context.online,
     offlineError: ({ event }) =>
       (event as { error?: { offline?: unknown } }).error?.offline === true,
+    alreadyPaidError: ({ event }) =>
+      (event as { error?: { alreadyPaid?: unknown } }).error?.alreadyPaid === true,
     voucherAccepted: ({ event }) => (event as { output?: RedeemVoucherOutput }).output?.ok === true,
     slideTimed: ({ context }) =>
       context.config.pages.tutorial.slides?.[context.slideIndex]?.durationSec !== undefined,
@@ -311,6 +315,17 @@ export const flowMachine = setup({
         voucher: { code: '', status: 'idle' },
       });
     }),
+    /** The server reports the session as already paid (QRIS confirmed while we were offline). */
+    markAlreadyPaid: assign(({ context }) => ({
+      session: updateSession(context, {
+        paid: true,
+        paymentMethod: context.session?.paymentMethod ?? 'qris',
+        qrString: null,
+        paymentExpiresAt: null,
+      }),
+      voucher: { code: '', status: 'idle' as const },
+    })),
+    stopIdle: enqueueActions(({ enqueue }) => enqueue.cancel('idle')),
     markVoucherPaid: assign(({ context }) => ({
       session: updateSession(context, { paid: true, paymentMethod: 'voucher' }),
       voucher: { code: '', status: 'idle' as const },
@@ -514,6 +529,8 @@ export const flowMachine = setup({
               })),
             },
             onError: [
+              // The server already has this session as paid: continue, never charge twice.
+              { guard: 'alreadyPaidError', target: '#flow.capture', actions: 'markAlreadyPaid' },
               // Went offline while creating: stay on Payment without QRIS.
               { guard: 'offlineError', target: 'awaiting', actions: 'setOffline' },
               { target: '#flow.error', actions: 'setPaymentError' },
@@ -522,8 +539,12 @@ export const flowMachine = setup({
         },
         awaiting: {
           after: {
-            // QRIS expired without payment: cancel and let the buyer start the payment again.
-            paymentExpiry: { guard: 'hasQr', target: '#flow.framePick', actions: 'releasePayment' },
+            paymentExpiry: [
+              // Offline: the buyer may have paid and we cannot know yet. Wait for the network.
+              { guard: and(['hasQr', not('isOnline')]), target: 'confirming' },
+              // QRIS expired without payment: cancel and let the buyer start the payment again.
+              { guard: 'hasQr', target: '#flow.framePick', actions: 'releasePayment' },
+            ],
           },
           on: {
             // Back online without a QR: create it now.
@@ -586,6 +607,29 @@ export const flowMachine = setup({
           },
           // While checking: typing and Back are ignored (the redeem may already be recorded).
           on: { 'VOUCHER.KEY': {}, 'VOUCHER.BACKSPACE': {}, BACK: {} },
+        },
+        /**
+         * QRIS expired while offline. The QR stays hidden; PAYMENT.PAID (agent push / poll) still
+         * moves on to Capture. Back online → `verifying`; offline too long → give up.
+         * No idle timeout here: idle would cancel a QRIS the buyer may already have paid.
+         */
+        confirming: {
+          entry: 'stopIdle',
+          after: {
+            offlinePaymentConfirm: { target: '#flow.framePick', actions: 'releasePayment' },
+          },
+          on: {
+            'NETWORK.ONLINE': { target: 'verifying', actions: 'setOnline' },
+            ACTIVITY: {},
+          },
+        },
+        /** Online again: the status poll gets this long to report `paid`. */
+        verifying: {
+          entry: 'stopIdle',
+          after: {
+            paymentVerify: { target: '#flow.framePick', actions: 'releasePayment' },
+          },
+          on: { 'NETWORK.OFFLINE': { target: 'confirming', actions: 'setOffline' }, ACTIVITY: {} },
         },
         // Waiting for the operator's PIN (the kiosk shows the system PIN pad).
         cash: {

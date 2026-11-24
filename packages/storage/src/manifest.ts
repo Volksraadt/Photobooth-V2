@@ -72,3 +72,33 @@ export function sessionObjectKey(
 ): string {
   return `${orgId}/sessions/${sessionId}/${kind}/${safeFileName(name)}`;
 }
+
+/**
+ * The download link to draw in a rebuilt composite's QR (audit R5). The QR must always point at
+ * this session's short link `/s/<code>` (CLAUDE.md invariant), so the device-sent URL is used only
+ * when it is exactly that path (any host: a custom QR domain is allowed); otherwise the link is
+ * rebuilt from `fallbackBase` (PB_SHORT_LINK_BASE / PB_PUBLIC_API_URL), or no QR at all.
+ */
+export function safeDownloadUrl(
+  sent: string | null,
+  code: string,
+  fallbackBase: string | null,
+): string | null {
+  if (sent) {
+    try {
+      const u = new URL(sent);
+      if (
+        (u.protocol === 'https:' || u.protocol === 'http:') &&
+        !u.username &&
+        !u.password &&
+        !u.search &&
+        !u.hash &&
+        u.pathname === `/s/${code}`
+      )
+        return u.href;
+    } catch {
+      // fall through
+    }
+  }
+  return fallbackBase ? `${fallbackBase.replace(/\/+$/, '')}/s/${code}` : null;
+}

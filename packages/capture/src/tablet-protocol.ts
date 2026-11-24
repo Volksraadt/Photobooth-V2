@@ -101,7 +101,9 @@ export type KioskToAgent =
       cameraSource: 'webcam' | 'tablet' | 'mock';
       cameraStatus: string;
       configVersion: number | null;
-    };
+    }
+  /** The kiosk could not use the config the agent offered (reported as a device event). */
+  | { type: 'config-invalid'; version: number; issues: string[] };
 
 export type AgentToKiosk =
   | { type: 'camera'; camera: TabletCameraState }

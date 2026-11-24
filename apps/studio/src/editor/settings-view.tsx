@@ -1,6 +1,6 @@
 'use client';
 
-import { ADMIN_PIN_RE, hashAdminPin, type PaymentMethod } from '@pb/schema';
+import { hashAdminPin, NEW_ADMIN_PIN_RE, type PaymentMethod } from '@pb/schema';
 import { useState } from 'react';
 import { AssetField, ensureAssetRef } from './assets';
 import { useApply, useEditor } from './editor-context';
@@ -274,7 +274,7 @@ export function SettingsView() {
                   className={inputCls}
                   type="password"
                   inputMode="numeric"
-                  placeholder="4–8 digit"
+                  placeholder="6–8 digit"
                   data-testid="setting-pin"
                   value={pin}
                   onChange={(e) => setPin(e.target.value.replace(/\D/g, '').slice(0, 8))}
@@ -282,7 +282,7 @@ export function SettingsView() {
                 <button
                   type="button"
                   className="h-8 shrink-0 rounded bg-primary px-3 text-xs text-primary-foreground disabled:opacity-50"
-                  disabled={!ADMIN_PIN_RE.test(pin)}
+                  disabled={!NEW_ADMIN_PIN_RE.test(pin)}
                   onClick={async () => {
                     const hash = await hashAdminPin(pin);
                     apply('PIN admin', (d) => void (d.admin.pinHash = hash));

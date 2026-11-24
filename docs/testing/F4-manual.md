@@ -35,7 +35,7 @@ di kolom paling kanan setiap tabel.
 
 | # | Langkah | Hasil yang diharapkan | Hasil |
 |---|---|---|---|
-| 2.1 | Buat 1 voucher Penuh tanpa masa berlaku | Satu kode `1234-5678-9012` tampil + "kode tidak bisa ditampilkan lagi" | |
+| 2.1 | Buat 1 voucher Penuh tanpa masa berlaku | Satu kode `1234-5678-9012-3456` tampil + "kode tidak bisa ditampilkan lagi" | |
 | 2.2 | Buat batch 10 voucher Nominal Rp50.000 berlaku s.d. besok, catatan "uji" | 10 kode; **Unduh CSV** menghasilkan file 10 baris (buka di Excel, kode utuh); **Cetak** membuka kartu siap cetak | |
 | 2.3 | Reload | Daftar menampilkan `····-····-9012`, status **tersedia**; kode lengkap tidak muncul lagi | |
 | 2.4 | Buat 1 voucher Nominal Rp1.000 (lebih kecil dari harga frame) — simpan untuk 5.6 | Tersedia | |
@@ -93,7 +93,7 @@ antrian sesi/voucher/tunai).
 | 5.4 | Selesaikan sesi sampai tercetak | Strip tercetak; QR di strip = `…/s/<KODE>` (kode sesi lokal) | |
 | 5.5 | Sesi baru → Payment → masukkan voucher A lagi | Ditolak: "Voucher sudah dipakai"; tetap di Payment | |
 | 5.6 | Masukkan voucher nominal Rp1.000 (2.4) | "Nilai voucher kurang" | |
-| 5.7 | Masukkan kode acak 12 digit | "Voucher tidak valid" | |
+| 5.7 | Masukkan kode acak 16 digit | "Voucher tidak valid" | |
 | 5.8 | Tekan **Tunai** → PIN pad "Pembayaran tunai" → PIN salah | "PIN salah…" | |
 | 5.9 | PIN benar | Pindah ke Capture; selesaikan sesi (tercetak) | |
 | 5.10 | Mode admin | Antrian: sesi 2, voucher 1, tunai 1 (belum terkirim) | |

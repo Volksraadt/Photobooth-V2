@@ -1,6 +1,7 @@
 import type { CaptureSource, CapturedImage } from '@pb/capture';
 import {
   flowMachine,
+  PaymentAlreadyPaidError,
   PaymentOfflineError,
   sessionTotal,
   type CaptureShotInput,
@@ -182,6 +183,9 @@ async function createAgentPayment(
   } catch (err) {
     if (err instanceof AgentError && (err.code === 'offline' || err.status === 0)) {
       throw new PaymentOfflineError();
+    }
+    if (err instanceof AgentError && err.code === 'already_paid') {
+      throw new PaymentAlreadyPaidError();
     }
     throw err;
   }

@@ -1,4 +1,5 @@
 import { applyInvoicePaid, BillingError, getInvoice, invoiceIdFromOrder } from '@pb/db';
+import { PaymentProviderError } from '@pb/payments';
 import { Hono } from 'hono';
 import type { AppEnv } from '../types';
 
@@ -28,11 +29,24 @@ export function billingWebhookRoutes() {
     // Valid but not an invoice of ours (dashboard "test notification"): acknowledge, do not retry.
     if (!invoice) return c.json({ ok: true, ignored: true });
     if (event.status !== 'paid') return c.json({ ok: true });
+    // Signed fields do not include the status: confirm with Midtrans before activating (audit S1).
+    let confirmed: Awaited<ReturnType<typeof provider.getStatus>>;
+    try {
+      confirmed = await provider.getStatus(orderId);
+    } catch (err) {
+      if (!(err instanceof PaymentProviderError)) throw err;
+      console.warn(`[api] billing webhook: status check failed order=${orderId}`);
+      return c.json({ error: 'status_unavailable' }, 503);
+    }
+    if (confirmed?.status !== 'paid') {
+      console.warn(`[api] billing webhook: paid not confirmed order=${orderId}`);
+      return c.json({ ok: true, ignored: true });
+    }
     try {
       await applyInvoicePaid(deps.db, invoice.id, {
-        providerRef: event.providerRef,
-        paidAt: event.paidAt,
-        grossAmount: event.grossAmount,
+        providerRef: confirmed.providerRef ?? event.providerRef,
+        paidAt: confirmed.paidAt ?? event.paidAt,
+        grossAmount: confirmed.grossAmount ?? event.grossAmount,
       });
       return c.json({ ok: true });
     } catch (err) {

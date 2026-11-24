@@ -19,6 +19,17 @@ function driveName(session: LocalSessionRow, f: LocalFileRow): string {
   return `${session.code}-foto${f.slot_index ?? 1}${ext}`;
 }
 
+/**
+ * A problem with this session's files on this machine (corrupt file, nothing selected). Retrying
+ * later is kept (never delete), but it must not hold up the other sessions (audit R4).
+ */
+export class LocalUploadError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'LocalUploadError';
+  }
+}
+
 export type UploadOptions = {
   /** Keep the local copy this many days after a confirmed upload (0 = delete at once). */
   retentionDays: number;
@@ -116,7 +127,8 @@ export class UploadQueue {
       const all = this.store.files(session.id);
       const originals = all.filter((f) => f.kind === 'original' && f.selected === 1);
       const composite = all.find((f) => f.kind === 'composite');
-      if (originals.length === 0) throw new Error('Tidak ada foto terpilih untuk diunggah');
+      if (originals.length === 0)
+        throw new LocalUploadError('Tidak ada foto terpilih untuk diunggah');
       const toUpload: LocalFileRow[] = [...originals, ...(composite ? [composite] : [])];
 
       for (const f of toUpload) {
@@ -169,9 +181,11 @@ export class UploadQueue {
   }
 
   private async readVerified(f: LocalFileRow): Promise<Buffer> {
-    const bytes = await readFile(f.path);
+    const bytes = await readFile(f.path).catch((err: NodeJS.ErrnoException) => {
+      throw new LocalUploadError(`File ${f.id} tidak dapat dibaca (${err.code ?? err.message})`);
+    });
     if (sha256Hex(bytes) !== f.sha256)
-      throw new Error(`File ${f.id} di disk tidak cocok dengan hash (rusak)`);
+      throw new LocalUploadError(`File ${f.id} di disk tidak cocok dengan hash (rusak)`);
     return bytes;
   }
 
@@ -191,6 +205,20 @@ export class UploadQueue {
         this.store.markUploadFailed(session.id, err.message, this.at(2_000));
         return true;
       }
+    } else if (err instanceof LocalUploadError) {
+      // Says nothing about the network: back off this session only and go on with the others.
+      const attempts = session.upload_attempts + 1;
+      this.store.markUploadFailed(session.id, err.message, this.at(uploadBackoffMs(attempts)));
+      this.event(
+        'upload_blocked',
+        `Sesi ${session.code} tidak bisa diunggah: ${err.message}`,
+        'error',
+        {
+          sessionId: session.id,
+          attempts,
+        },
+      );
+      return true;
     } else {
       this.telemetry.report(err);
     }

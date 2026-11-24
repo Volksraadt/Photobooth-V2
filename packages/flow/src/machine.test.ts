@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createActor, fromCallback, fromPromise } from 'xstate';
 import { flowMachine } from './machine';
 import {
+  PaymentAlreadyPaidError,
   PaymentOfflineError,
   type CaptureShotInput,
   type FlowEvent,
@@ -26,6 +27,7 @@ function start(
     cameraFails?: boolean;
     online?: boolean;
     paymentOffline?: boolean;
+    paymentAlreadyPaid?: boolean;
     voucher?: (code: string) => RedeemVoucherOutput;
   } = {},
 ) {
@@ -53,6 +55,7 @@ function start(
       createPayment: fromPromise(async ({ input }) => {
         calls.payments++;
         if (opts.paymentOffline) throw new PaymentOfflineError();
+        if (opts.paymentAlreadyPaid) throw new PaymentAlreadyPaidError();
         return {
           paymentId: `pay-${input.sessionCode}-${calls.payments}`,
           qrString: `QR-${input.amount}`,
@@ -436,6 +439,56 @@ describe('F4: payment methods + offline', () => {
     );
   });
 
+  describe('QRIS expiring while offline (audit T2)', () => {
+    async function expireOffline(h: Harness) {
+      await toPayment(h);
+      const paymentId = h.state().context.session!.paymentId;
+      h.send({ type: 'NETWORK.OFFLINE' });
+      await h.tick(h.state().context.config.flow.qrisExpirySec * 1000);
+      return paymentId;
+    }
+
+    it('waits for the network instead of cancelling, and continues when it turns out paid', async () => {
+      const h = start(makeConfig(allMethods));
+      const paymentId = await expireOffline(h);
+      expect(h.state().matches({ payment: 'confirming' })).toBe(true);
+      expect(h.calls.cancelled).toEqual([]);
+      // Idle does not throw the (maybe paying) buyer out meanwhile.
+      await h.tick(4 * 60_000);
+      expect(h.state().matches({ payment: 'confirming' })).toBe(true);
+      h.send({ type: 'NETWORK.ONLINE' });
+      expect(h.state().matches({ payment: 'verifying' })).toBe(true);
+      h.send({ type: 'PAYMENT.PAID', paymentId: paymentId! });
+      await h.tick(0);
+      expect(h.state().matches('capture')).toBe(true);
+      expect(h.calls.cancelled).toEqual([]);
+    });
+
+    it('back online without a payment: cancels after the verify window', async () => {
+      const h = start(makeConfig(allMethods), {});
+      const paymentId = await expireOffline(h);
+      h.send({ type: 'NETWORK.ONLINE' });
+      await h.tick(10_000);
+      expect(h.state().value).toBe('framePick');
+      expect(h.calls.cancelled).toEqual([paymentId]);
+    });
+
+    it('offline for too long: gives up (the cancel is queued by the agent)', async () => {
+      const h = start(makeConfig(allMethods));
+      const paymentId = await expireOffline(h);
+      await h.tick(5 * 60_000);
+      expect(h.state().value).toBe('framePick');
+      expect(h.calls.cancelled).toEqual([paymentId]);
+    });
+  });
+
+  it('the server says the session is already paid: continue to Capture', async () => {
+    const h = start(makeConfig(allMethods), { paymentAlreadyPaid: true });
+    await toPayment(h);
+    expect(h.state().matches('capture')).toBe(true);
+    expect(h.state().context.session?.paid).toBe(true);
+  });
+
   it('an offline error while creating keeps the buyer on Payment (no Error page)', async () => {
     const h = start(makeConfig(allMethods), { paymentOffline: true });
     await toPayment(h);
@@ -446,20 +499,20 @@ describe('F4: payment methods + offline', () => {
   it('voucher: wrong code shows the reason, a valid code pays and cancels the pending QRIS', async () => {
     const h = start(makeConfig(allMethods), {
       voucher: (code) =>
-        code === '123456789012' ? { ok: true, offline: true } : { ok: false, reason: 'used' },
+        code === '1234567890123456' ? { ok: true, offline: true } : { ok: false, reason: 'used' },
     });
     await toPayment(h);
     const qrPayment = h.state().context.session!.paymentId;
     typeCode(h, '1111');
     h.send({ type: 'VOUCHER.SUBMIT' }); // incomplete: ignored
     expect(h.calls.vouchers).toEqual([]);
-    typeCode(h, '22223333');
+    typeCode(h, '222233334444');
     h.send({ type: 'VOUCHER.SUBMIT' });
     await h.tick(0);
     expect(h.state().context.voucher).toEqual({ code: '', status: 'used' });
-    typeCode(h, '1234567890129'); // 13th digit ignored
+    typeCode(h, '12345678901234569'); // 17th digit ignored
     h.send({ type: 'VOUCHER.BACKSPACE' });
-    typeCode(h, '2');
+    typeCode(h, '6');
     h.send({ type: 'VOUCHER.SUBMIT' });
     await h.tick(0);
     expect(h.state().matches('capture')).toBe(true);

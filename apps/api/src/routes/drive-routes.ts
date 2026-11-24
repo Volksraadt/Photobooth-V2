@@ -260,36 +260,66 @@ async function driveFailure(c: Context<AppEnv>, orgId: string, err: unknown) {
 }
 
 /**
- * Public OAuth callback (Google redirects the owner's browser here). The `state` is an encrypted,
- * expiring blob made by `/connect`; it ties the callback to one org and user.
+ * Public OAuth callback (Google redirects the owner's browser here). It saves nothing: it hands
+ * `code` + `state` to Studio, which completes the connection with the signed-in user's token
+ * (`POST /studio/integrations/google-drive/complete`). The `state` names the org and the user who
+ * started; a consent link sent to someone else therefore cannot connect *their* Google account to
+ * the sender's org (audit S5: OAuth login CSRF).
  */
 export function googleOAuthRoutes() {
   const app = new Hono<AppEnv>();
 
-  app.get('/callback', async (c) => {
+  app.get('/callback', (c) => {
+    const studio = c.var.deps.studioUrl.replace(/\/$/, '');
+    if (c.req.query('error') || !c.req.query('code'))
+      return c.redirect(`${studio}/integrations?drive=denied`, 302);
+    const q = new URLSearchParams({
+      code: c.req.query('code') ?? '',
+      state: c.req.query('state') ?? '',
+    });
+    c.header('Referrer-Policy', 'no-referrer');
+    return c.redirect(`${studio}/integrations/drive/callback?${q}`, 302);
+  });
+
+  return app;
+}
+
+const CompleteBody = z.object({
+  code: z.string().min(1).max(2000),
+  state: z.string().min(1).max(4000),
+});
+
+/** `POST /studio/integrations/google-drive/complete` (user token). Result codes for Studio. */
+export function studioDriveCompleteRoutes() {
+  const app = new Hono<AppEnv>();
+
+  app.post('/integrations/google-drive/complete', async (c) => {
     const { deps } = c.var;
-    const back = (result: string) =>
-      c.redirect(`${deps.studioUrl.replace(/\/$/, '')}/integrations?drive=${result}`, 302);
-    if (!deps.google || !deps.secretBox) return back('not_configured');
-    if (c.req.query('error')) return back('denied');
+    const done = (result: string, status: 200 | 400 | 403 = 200) => c.json({ result }, status);
+    if (!deps.google || !deps.secretBox) return done('not_configured');
+    const body = CompleteBody.safeParse(await c.req.json().catch(() => null));
+    if (!body.success) return done('invalid', 400);
 
     let state: OAuthState;
     try {
-      state = JSON.parse(
-        deps.secretBox.decrypt(c.req.query('state') ?? '', STATE_AAD),
-      ) as OAuthState;
+      state = JSON.parse(deps.secretBox.decrypt(body.data.state, STATE_AAD)) as OAuthState;
     } catch {
-      return c.text('Permintaan tidak valid. Mulai lagi dari Studio.', 400);
+      return done('invalid', 400);
     }
-    if (state.exp < Date.now()) return back('expired');
-    const code = c.req.query('code');
-    if (!code) return back('denied');
+    if (state.exp < Date.now()) return done('expired');
+    // Only the user who pressed "Hubungkan" may finish, and only while still owner/manager.
+    if (state.userId !== c.var.user.userId) {
+      console.warn(`[api] drive oauth: state of another user (org=${state.orgId})`);
+      return done('wrong_user', 403);
+    }
+    if (await requireOrgEditor(c, state.orgId)) return done('forbidden', 403);
+    const code = body.data.code;
 
     try {
       const tokens = await deps.google.exchangeCode(code);
-      if (!tokens.refreshToken) return back('no_refresh_token');
+      if (!tokens.refreshToken) return done('no_refresh_token');
       // Only the narrow scope is acceptable (we never ask for more, but verify what was granted).
-      if (!tokens.scope.split(' ').includes(DRIVE_SCOPE)) return back('scope_missing');
+      if (!tokens.scope.split(' ').includes(DRIVE_SCOPE)) return done('scope_missing');
 
       const orgId = state.orgId;
       const box: SecretBox = deps.secretBox;
@@ -322,13 +352,13 @@ export function googleOAuthRoutes() {
       });
       // Jobs that failed because Drive was missing/revoked start again.
       await requeueOwnerActionJobs(deps.db, orgId);
-      return back('connected');
+      return done('connected');
     } catch (err) {
       console.error(
         '[api] google oauth callback failed:',
         err instanceof Error ? err.message : err,
       );
-      return back('error');
+      return done('error');
     }
   });
 

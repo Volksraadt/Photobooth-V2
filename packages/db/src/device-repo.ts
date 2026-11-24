@@ -1,6 +1,6 @@
 import { createId } from '@paralleldrive/cuid2';
 import type { BoothConfig } from '@pb/schema';
-import { and, count, eq, inArray, isNull, lt } from 'drizzle-orm';
+import { and, count, eq, gt, inArray, isNull, lt } from 'drizzle-orm';
 import { getOrgPlan, PlanLimitError } from './booth-repo';
 import {
   auditLogs,
@@ -26,11 +26,30 @@ function sixDigits(): string {
   return n.toString().padStart(6, '0');
 }
 
+/**
+ * At most this many unclaimed, unexpired codes exist at once. Keeps the 6-digit space sparse, so
+ * an owner who mistypes a digit almost never hits someone else's kiosk (audit S2).
+ */
+export const MAX_ACTIVE_PAIRING_CODES = 2000;
+
+export class PairingBusyError extends Error {
+  constructor() {
+    super('Terlalu banyak kode pairing aktif. Coba lagi sebentar lagi.');
+    this.name = 'PairingBusyError';
+  }
+}
+
 /** Kiosk asks for a pairing code, proving later possession of its token by the hash. */
 export async function createPairingCode(
   db: Db,
   input: { tokenHash: string; fingerprint: string },
+  maxActive = MAX_ACTIVE_PAIRING_CODES,
 ): Promise<{ code: string; expiresAt: Date }> {
+  const [active] = await db
+    .select({ n: count() })
+    .from(pairingCodes)
+    .where(and(isNull(pairingCodes.claimedBoothId), gt(pairingCodes.expiresAt, new Date())));
+  if ((active?.n ?? 0) >= maxActive) throw new PairingBusyError();
   const expiresAt = new Date(Date.now() + PAIRING_TTL_MS);
   for (let attempt = 0; attempt < 10; attempt++) {
     const code = sixDigits();
@@ -83,7 +102,7 @@ export class PairingError extends Error {
 export async function claimPairingCode(
   db: Db,
   input: { code: string; boothId: string; orgId: string; name: string; userId: string },
-): Promise<{ deviceId: string }> {
+): Promise<{ deviceId: string; fingerprint: string }> {
   return db.transaction(async (tx) => {
     const [row] = await tx
       .select()
@@ -127,9 +146,10 @@ export async function claimPairingCode(
       action: 'device.pair',
       entity: 'device',
       entityId: deviceId,
-      after: { boothId: input.boothId, name: input.name },
+      after: { boothId: input.boothId, name: input.name, fingerprint: row.deviceFingerprint },
     });
-    return { deviceId };
+    // Shown to the owner so a wrong device (mistyped code) is noticed and revoked at once.
+    return { deviceId, fingerprint: row.deviceFingerprint };
   });
 }
 

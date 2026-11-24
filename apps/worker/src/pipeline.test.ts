@@ -92,7 +92,8 @@ async function photo(color: string) {
 }
 
 /** Owner connects Google Drive through the real OAuth endpoints (consent is auto-approved). */
-async function connectDrive() {
+/** Full OAuth round trip; `as` = the user whose browser finishes it (default: the one who started). */
+async function connectDrive(as?: string) {
   const res = await api(`/studio/orgs/${orgId}/integrations/google-drive/connect`, {
     method: 'POST',
     token: userToken,
@@ -103,7 +104,20 @@ async function connectDrive() {
   const back = new URL(consent.headers.get('location')!);
   const cb = await app.request(`http://api.test${back.pathname}${back.search}`);
   expect(cb.status).toBe(302);
-  return cb.headers.get('location')!;
+  // The API callback only forwards to Studio, which completes as the signed-in user (audit S5).
+  const studio = new URL(cb.headers.get('location')!);
+  expect(studio.origin + studio.pathname).toBe('http://studio.test/integrations/drive/callback');
+  const done = await api('/studio/integrations/google-drive/complete', {
+    method: 'POST',
+    token: as ?? userToken,
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({
+      code: studio.searchParams.get('code'),
+      state: studio.searchParams.get('state'),
+    }),
+  });
+  const { result } = (await done.json()) as { result: string };
+  return `http://studio.test/integrations?drive=${result}`;
 }
 
 type Agent = { id: string; code: string; composite?: boolean };
@@ -288,6 +302,17 @@ afterAll(async () => {
 
 describe('F5 pipeline', () => {
   it('connects Google Drive with drive.file only and stores the refresh token encrypted', async () => {
+    // Another signed-in user cannot finish a consent that was started by the owner (audit S5).
+    const stranger = await createTestUser(db, 'victim-f5@example.com');
+    const strangerToken = await signDevUserToken(SECRET, {
+      userId: stranger,
+      email: 'victim-f5@example.com',
+    });
+    expect(await connectDrive(strangerToken)).toBe(
+      'http://studio.test/integrations?drive=wrong_user',
+    );
+    expect(await getDriveConnection(db, orgId)).toBeNull();
+
     const back = await connectDrive();
     expect(back).toBe('http://studio.test/integrations?drive=connected');
     const conn = (await getDriveConnection(db, orgId))!;

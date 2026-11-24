@@ -31,15 +31,25 @@ export function AgentApp({
   useEffect(() => {
     let alive = true;
     let version: number | null = null;
+    let rejected: number | null = null;
     const load = async () => {
       try {
         const s = await agent.configState();
         if (!alive) return;
         if (s.status === 'ready') {
-          if (s.version === version) return;
+          if (s.version === version || s.version === rejected) return;
           const parsed = migrateBoothConfig(s.config);
           if (!parsed.success) {
+            // Audit S6: never silent. Report once per version; keep the last good config on
+            // screen if there is one, otherwise explain instead of "Menghubungkan…" forever.
+            rejected = s.version;
+            const issues = parsed.issues.map((i) => `${i.path || '(root)'}: ${i.message}`);
             console.error('[kiosk] invalid config from agent', parsed.issues);
+            agent.send({ type: 'config-invalid', version: s.version, issues });
+            setState({
+              status: 'error',
+              message: `Desain versi ${s.version} tidak bisa dipakai booth ini (${issues.length} masalah). Periksa desain di Studio atau perbarui aplikasi booth.`,
+            });
             return;
           }
           version = s.version;

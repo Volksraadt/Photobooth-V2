@@ -3,7 +3,9 @@ import {
   BoothConfigEvents,
   createBoothFromTemplate,
   createOrg,
+  createPairingCode,
   getBooth,
+  PairingBusyError,
   publishConfig,
   withUserContext,
   type Db,
@@ -94,6 +96,8 @@ describe('pairing → config → stream', () => {
     expect(bad.status).toBe(400);
     const res = await post('/studio/pairing/claim', { code, boothId, name: 'Laptop' }, userToken);
     expect(res.status).toBe(201);
+    // Studio shows which computer was paired, so a mistyped code is noticed (audit S2).
+    expect(await res.json()).toMatchObject({ fingerprint: 'Chrome/Windows' });
     const status = await (await post('/pair/status', { code, token: deviceToken })).json();
     expect(status).toEqual({ status: 'claimed', boothId });
   });
@@ -152,5 +156,38 @@ describe('pairing → config → stream', () => {
       deviceToken,
     );
     expect(res.status).toBe(200);
+  });
+});
+
+describe('abuse limits on unauthenticated endpoints (audit S2)', () => {
+  it('limits /pair/start per client IP and answers 429 with Retry-After', async () => {
+    const limited = createApp({
+      db,
+      verifyUserToken: devUserTokenVerifier(SECRET),
+      configEvents: new BoothConfigEvents(),
+    });
+    const start = (ip: string) =>
+      limited.request('/pair/start', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', 'x-forwarded-for': ip },
+        body: JSON.stringify({ tokenHash: sha256Hex(randomToken()), fingerprint: 'x' }),
+      });
+    process.env.PB_TRUST_PROXY = '1';
+    try {
+      for (let i = 0; i < 20; i++) expect((await start('203.0.113.7')).status).toBe(201);
+      const blocked = await start('203.0.113.7');
+      expect(blocked.status).toBe(429);
+      expect(Number(blocked.headers.get('retry-after'))).toBeGreaterThan(0);
+      // Another client is not affected.
+      expect((await start('198.51.100.9')).status).toBe(201);
+    } finally {
+      delete process.env.PB_TRUST_PROXY;
+    }
+  });
+
+  it('refuses new codes when too many are active (keeps the 6-digit space sparse)', async () => {
+    await expect(
+      createPairingCode(db, { tokenHash: sha256Hex(randomToken()), fingerprint: 'x' }, 1),
+    ).rejects.toBeInstanceOf(PairingBusyError);
   });
 });

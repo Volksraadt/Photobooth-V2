@@ -260,7 +260,15 @@ export class Agent {
       }
       if (msg.type === 'signal') this.camera.relayFromKiosk(msg.peerId, msg.data);
       else if (msg.type === 'peer-closed') this.camera.peerClosed(msg.peerId);
-      else if (msg.type === 'kiosk-status') {
+      else if (msg.type === 'config-invalid') {
+        // Visible in Studio's device log: the owner learns why the booth is not updating.
+        this.store.event({
+          level: 'error',
+          kind: 'config_invalid',
+          message: `Kiosk menolak config versi ${msg.version}`,
+          data: { version: msg.version, issues: (msg.issues ?? []).slice(0, 20) },
+        });
+      } else if (msg.type === 'kiosk-status') {
         const prev = this.kiosk;
         this.kiosk = {
           cameraSource: msg.cameraSource,

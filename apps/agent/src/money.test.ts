@@ -35,8 +35,8 @@ import { Agent } from './agent';
 import { DEFAULT_ORIGINS } from './options';
 
 const SECRET = 'test-secret-'.padEnd(48, 'x');
-const CODE_A = '111122223333';
-const CODE_B = '444455556666';
+const CODE_A = '1111222233334444';
+const CODE_B = '4444555566667777';
 
 let db: Db;
 let closeDb: () => Promise<void>;
@@ -262,7 +262,7 @@ describe('offline: vouchers + cash, synced when back online', () => {
 
   it('accepts a valid voucher once; the same voucher is refused the second time', async () => {
     const first = await json<{ result: string; offline: boolean }>(
-      post('/vouchers/redeem', { code: '1111-2222-3333', session: s1, amount: price() }),
+      post('/vouchers/redeem', { code: '1111-2222-3333-4444', session: s1, amount: price() }),
     );
     expect(first).toEqual({ result: 'ok', offline: true });
     const again = await json<{ result: string }>(
@@ -270,7 +270,7 @@ describe('offline: vouchers + cash, synced when back online', () => {
     );
     expect(again.result).toBe('used');
     const bogus = await json<{ result: string }>(
-      post('/vouchers/redeem', { code: '999988887777', session: s2, amount: price() }),
+      post('/vouchers/redeem', { code: '9999888877776666', session: s2, amount: price() }),
     );
     expect(bogus.result).toBe('invalid');
   });
@@ -349,7 +349,7 @@ describe('offline: vouchers + cash, synced when back online', () => {
       offline: true,
     });
     const [v] = await db.select().from(vouchers).where(eq(vouchers.usedSessionId, s1.id));
-    expect(v).toMatchObject({ usedOffline: true, codeLast4: '3333' });
+    expect(v).toMatchObject({ usedOffline: true, codeLast4: '4444' });
     const cash = await db.select().from(cashApprovals).where(eq(cashApprovals.sessionId, s3.id));
     expect(cash).toHaveLength(1);
     expect(agent.store.outboxCount()).toBe(0);

@@ -38,7 +38,7 @@ export default async function VouchersPage({ params }: { params: Promise<{ booth
           <CardHeader>
             <CardTitle className="text-base">Buat voucher</CardTitle>
             <CardDescription>
-              Kode 12 digit dimasukkan pembeli di halaman Pembayaran. Daftar voucher otomatis
+              Kode 16 digit dimasukkan pembeli di halaman Pembayaran. Daftar voucher otomatis
               tersinkron ke perangkat booth.
             </CardDescription>
           </CardHeader>

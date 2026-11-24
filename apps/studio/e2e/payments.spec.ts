@@ -63,7 +63,7 @@ test('Midtrans integration page, voucher batch, QRIS paid → capture < 3 s, vou
   await expect(page.getByTestId('voucher-created')).toBeVisible({ timeout: 20_000 });
   const codes = await page.getByTestId('voucher-code').allTextContents();
   expect(codes).toHaveLength(2);
-  expect(codes[0]).toMatch(/^\d{4}-\d{4}-\d{4}$/);
+  expect(codes[0]).toMatch(/^\d{4}-\d{4}-\d{4}-\d{4}$/);
 
   // --- Publish + pair ---
   const kiosk = await pairKiosk(context, page, boothUrl);

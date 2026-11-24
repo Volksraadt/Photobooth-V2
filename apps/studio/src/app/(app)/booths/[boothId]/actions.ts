@@ -69,13 +69,15 @@ export async function pairDeviceAction(_prev: FormState, form: FormData): Promis
   } catch {
     return { status: 'error', message: 'API tidak dapat dihubungi. Coba lagi.' };
   }
-  const body = (await res.json().catch(() => ({}))) as { message?: string };
+  const body = (await res.json().catch(() => ({}))) as { message?: string; fingerprint?: string };
   if (!res.ok)
     return { status: 'error', message: body.message ?? `Pairing gagal (HTTP ${res.status}).` };
   revalidatePath(`/booths/${boothId}`);
+  // The computer name lets the owner spot a wrong device (mistyped code) and revoke it at once.
+  const host = body.fingerprint?.replace(/^agent:/, '');
   return {
     status: 'info',
-    message: `Perangkat "${name}" terpasang. Kiosk akan memuat desain aktif.`,
+    message: `Perangkat "${name}"${host ? ` (komputer: ${host})` : ''} terpasang. Kiosk akan memuat desain aktif. Jika nama komputer tidak sesuai, cabut perangkat ini di daftar perangkat.`,
   };
 }
 

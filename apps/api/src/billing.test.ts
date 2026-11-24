@@ -274,7 +274,23 @@ describe('platform money is separate from the owner gateway', () => {
   it("charges and verifies with the PLATFORM key, never the owner's", async () => {
     const OWNER_KEY = 'SB-Mid-server-OWNER-KEY';
     const PLATFORM_KEY = 'SB-Mid-server-PLATFORM-KEY';
-    const fetchStub = vi.fn(async (_url: string | URL | Request, init: RequestInit = {}) => {
+    // What Midtrans answers to GET /v2/<order>/status (the webhook confirms with it, audit S1).
+    let statusNow = 'pending';
+    const fetchStub = vi.fn(async (url: string | URL | Request, init: RequestInit = {}) => {
+      if (String(url).endsWith('/status')) {
+        const orderId = String(url).split('/v2/')[1]!.replace('/status', '');
+        return new Response(
+          JSON.stringify({
+            status_code: statusNow === 'settlement' ? '200' : '201',
+            transaction_id: 'tx-platform',
+            order_id: orderId,
+            gross_amount: '150000.00',
+            transaction_status: statusNow,
+            settlement_time: '2026-11-25 10:00:00',
+          }),
+          { status: 200 },
+        );
+      }
       const body = JSON.parse(String(init.body)) as {
         transaction_details: { order_id: string; gross_amount: number };
       };
@@ -356,7 +372,11 @@ describe('platform money is separate from the owner gateway', () => {
     // A notification signed with the OWNER's key is not accepted for platform invoices.
     expect((await post(note(OWNER_KEY))).status).toBe(401);
     expect((await resolveEntitlements(db, orgId))!.planCode).toBe('starter');
-    // Signed with the platform key it is.
+    // Correctly signed, but Midtrans itself does not report it settled: ignored (audit S1).
+    expect((await post(note(PLATFORM_KEY))).status).toBe(200);
+    expect((await resolveEntitlements(db, orgId))!.planCode).toBe('starter');
+    // Signed with the platform key and confirmed by Midtrans: the plan is activated.
+    statusNow = 'settlement';
     expect((await post(note(PLATFORM_KEY))).status).toBe(200);
     expect((await resolveEntitlements(db, orgId))!.planCode).toBe('pro');
 

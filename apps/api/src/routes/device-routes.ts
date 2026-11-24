@@ -2,6 +2,8 @@ import { sha256Hex } from '@pb/crypto';
 import {
   activeConfigForDevice,
   createPairingCode,
+  devices,
+  PairingBusyError,
   pairingStatus,
   PaymentRepoError,
   recordCashApproval,
@@ -13,6 +15,7 @@ import {
   type Db,
   type DeviceRef,
 } from '@pb/db';
+import { and, eq, isNull } from 'drizzle-orm';
 import { Hono } from 'hono';
 import { streamSSE } from 'hono/streaming';
 import { z } from 'zod';
@@ -184,6 +187,14 @@ async function applyMoneyOutbox(db: Db, device: DeviceRef, body: Outbox): Promis
   return accepted;
 }
 
+async function deviceStillActive(db: Db, deviceId: string): Promise<boolean> {
+  const [row] = await db
+    .select({ id: devices.id })
+    .from(devices)
+    .where(and(eq(devices.id, deviceId), isNull(devices.revokedAt)));
+  return !!row;
+}
+
 /** Unauthenticated pairing endpoints (a kiosk has no token yet). */
 export function pairRoutes() {
   const app = new Hono<AppEnv>();
@@ -191,8 +202,17 @@ export function pairRoutes() {
   app.post('/start', async (c) => {
     const body = PairStartBody.safeParse(await c.req.json().catch(() => null));
     if (!body.success) return c.json({ error: 'invalid_body' }, 400);
-    const { code, expiresAt } = await createPairingCode(c.var.deps.db, body.data);
-    return c.json({ code, expiresAt: expiresAt.toISOString() }, 201);
+    try {
+      const { code, expiresAt } = await createPairingCode(c.var.deps.db, body.data);
+      return c.json({ code, expiresAt: expiresAt.toISOString() }, 201);
+    } catch (err) {
+      if (err instanceof PairingBusyError) {
+        console.warn('[api] pairing code limit reached');
+        c.header('Retry-After', '30');
+        return c.json({ error: 'pairing_busy', message: err.message }, 503);
+      }
+      throw err;
+    }
   });
 
   app.post('/status', async (c) => {
@@ -280,8 +300,15 @@ export function deviceRoutes() {
           };
         });
         wake = null;
-        if (pending === 0 && paymentQueue.length === 0 && !stream.aborted)
+        if (pending === 0 && paymentQueue.length === 0 && !stream.aborted) {
+          // Auth was checked when the stream opened; a device revoked since then is cut off
+          // here, at most one keep-alive later (audit R1).
+          if (!(await deviceStillActive(deps.db, device.id))) {
+            await stream.writeSSE({ event: 'revoked', data: '{}' });
+            break;
+          }
           await stream.write(': keep-alive\n\n');
+        }
       }
       unsubscribe();
       unsubscribePayments();

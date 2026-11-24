@@ -2,18 +2,20 @@ import { pbkdf2, pbkdf2Sync, randomInt } from 'node:crypto';
 import { promisify } from 'node:util';
 
 /**
- * Voucher codes: 12 digits (entered on the kiosk keypad, printed as 1234-5678-9012).
+ * Voucher codes: 16 digits (entered on the kiosk keypad, printed as 1234-5678-9012-3456).
  *
  * The device validates vouchers offline from a synced list of hashes, so the hash must be slow:
- * PBKDF2-SHA256 with a per-booth salt. One hash per redeem attempt on the device; the list itself
- * cannot be reversed cheaply (10^12 codes × PBKDF2). See docs/decisions.md (F4).
+ * PBKDF2-SHA256 with a per-booth salt. One hash per redeem attempt on the device. The salt is
+ * shared by the booth's vouchers (lookup by hash), so one guess tests the whole list: the code
+ * length is what keeps the list from being reversed. 12 digits fell to ~1 GPU-hour for a list of
+ * 500 (audit S4); 16 digits make it years. See docs/decisions.md.
  */
-export const VOUCHER_CODE_DIGITS = 12;
+export const VOUCHER_CODE_DIGITS = 16;
 export const VOUCHER_HASH_ITERATIONS = 20_000;
 
 const pbkdf2Async = promisify(pbkdf2);
 
-/** Strips spaces/dashes; null when not a 12-digit code. */
+/** Strips spaces/dashes; null when not a 16-digit code. */
 export function normalizeVoucherCode(input: string): string | null {
   const digits = input.replace(/[\s-]/g, '');
   return new RegExp(`^\\d{${VOUCHER_CODE_DIGITS}}$`).test(digits) ? digits : null;

@@ -5,7 +5,14 @@
  */
 export const ADMIN_PIN_HASH_RE =
   /^pbkdf2-sha256\$(\d{4,7})\$([A-Za-z0-9_-]{16,})\$([A-Za-z0-9_-]{43})$/;
+/** PINs a booth accepts (4-digit PINs set before the audit keep working). */
 export const ADMIN_PIN_RE = /^\d{4,8}$/;
+/**
+ * PINs Studio lets an owner set from now on (audit R2). The hash ships to the booth, so a 4-digit
+ * PIN can be brute-forced offline in seconds by whoever holds the config; 6+ digits at 210k
+ * PBKDF2 iterations takes far longer, on top of the kiosk/agent lockout.
+ */
+export const NEW_ADMIN_PIN_RE = /^\d{6,8}$/;
 const DEFAULT_ITERATIONS = 210_000;
 
 function b64url(bytes: Uint8Array): string {

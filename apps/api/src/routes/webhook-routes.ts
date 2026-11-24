@@ -1,4 +1,5 @@
 import { applyPaymentStatus, getPaymentByOrder, PaymentRepoError } from '@pb/db';
+import { PaymentProviderError } from '@pb/payments';
 import { Hono } from 'hono';
 import type { AppEnv } from '../types';
 
@@ -30,9 +31,29 @@ export function webhookRoutes() {
     // Valid but not ours (e.g. dashboard "test notification"): acknowledge so it is not retried.
     if (!payment) return c.json({ ok: true, ignored: true });
 
+    // The signature does not cover `transaction_status` (settlement and cancel share status code
+    // 200), so "paid" is only believed after asking Midtrans directly (audit S1).
+    let update = event;
+    if (event.status === 'paid') {
+      let confirmed: Awaited<ReturnType<typeof resolved.provider.getStatus>>;
+      try {
+        confirmed = await resolved.provider.getStatus(orderId);
+      } catch (err) {
+        if (!(err instanceof PaymentProviderError)) throw err;
+        // Midtrans retries notifications that do not get a 2xx.
+        console.warn(`[api] midtrans webhook: status check failed org=${orgId} order=${orderId}`);
+        return c.json({ error: 'status_unavailable' }, 503);
+      }
+      if (confirmed?.status !== 'paid') {
+        console.warn(`[api] midtrans webhook: paid not confirmed org=${orgId} order=${orderId}`);
+        return c.json({ ok: true, ignored: true });
+      }
+      update = confirmed;
+    }
+
     try {
       const res = await applyPaymentStatus(deps.db, orgId, payment.id, {
-        ...event,
+        ...update,
         source: 'webhook',
       });
       if (res.changed) {

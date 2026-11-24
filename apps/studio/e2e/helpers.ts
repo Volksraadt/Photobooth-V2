@@ -47,7 +47,7 @@ export async function pairKiosk(context: BrowserContext, studio: Page, boothUrl:
   await studio.getByLabel('Kode pairing').fill(code);
   await studio.getByLabel('Nama perangkat').fill('Laptop e2e');
   await studio.getByRole('button', { name: 'Pasang' }).click();
-  await expect(studio.getByText('Perangkat "Laptop e2e" terpasang')).toBeVisible();
+  await expect(studio.getByText(/Perangkat "Laptop e2e" \(komputer: .+\) terpasang/)).toBeVisible();
   // Paired, nothing published yet.
   await expect(kiosk.getByTestId('device-screen')).toHaveAttribute('data-status', 'waiting', {
     timeout: 15_000,

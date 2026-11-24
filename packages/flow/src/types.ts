@@ -61,12 +61,21 @@ export type FlowTimings = {
   shotPreviewMs: number;
   /** Capture page without a next/confirm button: auto-continue after the last shot. */
   captureAutoFinishMs: number;
+  /**
+   * QRIS expired while the booth was offline: the buyer may have paid without the booth knowing.
+   * Keep the Payment page waiting for the network this long before giving up (cancel → Pilih Frame).
+   */
+  offlinePaymentConfirmMs: number;
+  /** Back online after such an expiry: time for the status poll to report `paid` before giving up. */
+  paymentVerifyMs: number;
 };
 
 export const DEFAULT_FLOW_TIMINGS: FlowTimings = {
   countdownTickMs: 1000,
   shotPreviewMs: 1200,
   captureAutoFinishMs: 3000,
+  offlinePaymentConfirmMs: 5 * 60_000,
+  paymentVerifyMs: 10_000,
 };
 
 export type VoucherStatus =
@@ -75,7 +84,8 @@ export type VoucherStatus =
 /** Voucher being typed on the Payment page (digits only). */
 export type VoucherState = { code: string; status: VoucherStatus };
 
-export const VOUCHER_CODE_LENGTH = 12;
+/** Same as `VOUCHER_CODE_DIGITS` in @pb/crypto (the flow stays free of Node crypto). */
+export const VOUCHER_CODE_LENGTH = 16;
 
 export type FlowContext = {
   config: BoothConfig;
@@ -162,6 +172,18 @@ export class PaymentOfflineError extends Error {
   constructor(message = 'API tidak dapat dihubungi') {
     super(message);
     this.name = 'PaymentOfflineError';
+  }
+}
+
+/**
+ * The server already has this session as paid (e.g. the buyer paid a QRIS while the booth was
+ * offline and the kiosk gave up waiting). The flow continues to Capture instead of an error.
+ */
+export class PaymentAlreadyPaidError extends Error {
+  readonly alreadyPaid = true;
+  constructor(message = 'Sesi ini sudah lunas') {
+    super(message);
+    this.name = 'PaymentAlreadyPaidError';
   }
 }
 

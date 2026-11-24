@@ -1,5 +1,5 @@
 import type { BoothConfig } from '@pb/schema';
-import { and, desc, eq, lte, ne, sql } from 'drizzle-orm';
+import { and, desc, eq, lt, lte, ne, or, sql } from 'drizzle-orm';
 import {
   auditLogs,
   boothConfigs,
@@ -692,19 +692,20 @@ export async function syncDeviceSession(db: Db, device: DeviceRef, input: Sessio
   await db.transaction(async (tx) => {
     const existing = await ensureDeviceSession(tx, device, input);
     // Money fields come from the payment records (qris/voucher/cash); free sessions are 0.
-    const money =
-      input.paymentMethod === 'free'
+    // A session the server already has as paid keeps its money, whatever the record says
+    // (a `free` record never zeroes a QRIS/voucher/cash payment; audit R3).
+    const money = existing.paymentMethod
+      ? {}
+      : input.paymentMethod === 'free'
         ? { paymentMethod: 'free' as const, grossAmount: 0, feeAmount: 0, netAmount: 0 }
-        : existing.paymentMethod
-          ? {}
-          : input.paymentMethod && input.paymentMethod !== 'qris'
-            ? {
-                paymentMethod: input.paymentMethod,
-                grossAmount: input.amount,
-                feeAmount: 0,
-                netAmount: input.amount,
-              }
-            : {};
+        : input.paymentMethod && input.paymentMethod !== 'qris'
+          ? {
+              paymentMethod: input.paymentMethod,
+              grossAmount: input.amount,
+              feeAmount: 0,
+              netAmount: input.amount,
+            }
+          : {};
     await tx
       .update(sessions)
       .set({
@@ -723,8 +724,18 @@ export async function syncDeviceSession(db: Db, device: DeviceRef, input: Sessio
 
 // --- Studio (read through RLS with a Tx from withUserContext) ---------------------------------
 
-export async function listRefundCandidates(db: DbOrTx, orgId: string) {
-  return db
+/** A paid session that has not finished this long after payment needs the owner's attention. */
+export const STUCK_PAID_SESSION_MS = 30 * 60_000;
+
+/**
+ * Payments the owner must follow up on (refund or contact the buyer):
+ * - `late`: settled after expiry/cancel or for a session paid another way (`paid_late`);
+ * - `incomplete`: paid on time, but the session never completed (e.g. the booth was offline when
+ *   the buyer paid and gave up waiting; audit T2). Disappears once the session syncs as completed.
+ */
+export async function listRefundCandidates(db: DbOrTx, orgId: string, now = new Date()) {
+  const stuckBefore = new Date(now.getTime() - STUCK_PAID_SESSION_MS);
+  const rows = await db
     .select({
       id: payments.id,
       orderId: payments.orderId,
@@ -733,11 +744,28 @@ export async function listRefundCandidates(db: DbOrTx, orgId: string) {
       providerRef: payments.providerRef,
       sessionCode: sessions.code,
       boothId: sessions.boothId,
+      status: payments.status,
     })
     .from(payments)
     .innerJoin(sessions, eq(sessions.id, payments.sessionId))
-    .where(and(eq(payments.orgId, orgId), eq(payments.status, 'paid_late')))
+    .where(
+      and(
+        eq(payments.orgId, orgId),
+        or(
+          eq(payments.status, 'paid_late'),
+          and(
+            eq(payments.status, 'paid'),
+            lt(payments.paidAt, stuckBefore),
+            ne(sessions.status, 'completed'),
+          ),
+        ),
+      ),
+    )
     .orderBy(desc(payments.paidAt));
+  return rows.map(({ status, ...r }) => ({
+    ...r,
+    reason: status === 'paid_late' ? ('late' as const) : ('incomplete' as const),
+  }));
 }
 
 export async function listBoothSessions(db: DbOrTx, boothId: string, limit = 50) {

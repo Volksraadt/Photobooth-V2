@@ -1,0 +1,18 @@
+# The repository stores LF (Prettier's default). Without this, Windows checkouts with
+# core.autocrlf=true get CRLF and `pnpm format:check` fails locally (docs/audit-mvp.md R8).
+* text=auto eol=lf
+
+# Binary assets
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.ico binary
+*.webp binary
+*.mp4 binary
+*.mp3 binary
+*.woff binary
+*.woff2 binary
+*.ttf binary
+*.otf binary
+*.icns binary

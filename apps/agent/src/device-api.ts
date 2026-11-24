@@ -1,6 +1,7 @@
 import { createHash, randomBytes } from 'node:crypto';
 import { chmodSync, existsSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
-import { hostname } from 'node:os';
+import { execFileSync } from 'node:child_process';
+import { hostname, userInfo } from 'node:os';
 import { join } from 'node:path';
 
 export const sha256Hex = (data: string | Uint8Array) =>
@@ -33,11 +34,33 @@ export class TokenFile {
       return;
     }
     writeFileSync(this.path, token, { mode: 0o600 });
-    try {
-      chmodSync(this.path, 0o600);
-    } catch {
-      // Windows: ACLs of the per-user AppData folder apply.
+    if (process.platform === 'win32') restrictWindowsAcl(this.path);
+    else {
+      try {
+        chmodSync(this.path, 0o600);
+      } catch {
+        // best effort
+      }
     }
+  }
+}
+
+/**
+ * Windows ignores the 0600 mode (audit R7): drop inherited permissions and allow only the
+ * current user and SYSTEM, so other accounts on the booth laptop cannot read the device token.
+ * Best effort: if icacls fails, the per-user data folder's ACL still applies.
+ */
+export function restrictWindowsAcl(path: string): boolean {
+  try {
+    execFileSync(
+      'icacls',
+      [path, '/inheritance:r', '/grant:r', `${userInfo().username}:F`, '*S-1-5-18:F'],
+      { stdio: 'ignore', windowsHide: true, timeout: 10_000 },
+    );
+    return true;
+  } catch (err) {
+    console.warn('[agent] could not restrict device-token ACL:', (err as Error).message);
+    return false;
   }
 }
 

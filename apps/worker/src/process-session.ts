@@ -20,8 +20,9 @@ import {
   pickVideoPhotos,
   prng,
 } from '@pb/compositor';
-import { migrateBoothConfig, type BoothConfig } from '@pb/schema';
+import { assetUrlPrefixesFromEnv, migrateBoothConfig, type BoothConfig } from '@pb/schema';
 import {
+  safeDownloadUrl,
   SessionManifestSchema,
   sessionObjectKey,
   type OutputKind,
@@ -79,7 +80,11 @@ export async function processSession(deps: WorkerDeps, sessionId: string): Promi
   const mirror = cameraView?.type === 'camera-view' ? cameraView.mirror : false;
   const filter = config.filters.find((f) => f.id === manifest.filterId)?.params ?? null;
   const code = session.code;
-  const loadAsset = createAssetLoader(config, deps.fetchAsset);
+  const loadAsset = createAssetLoader(
+    config,
+    deps.assetUrlPrefixes ?? assetUrlPrefixesFromEnv(process.env),
+    deps.fetchAsset,
+  );
 
   const put = async (
     kind: OutputKindName,
@@ -192,7 +197,11 @@ export async function processSession(deps: WorkerDeps, sessionId: string): Promi
       photos,
       filter,
       mirror,
-      downloadUrl: manifest.downloadUrl,
+      downloadUrl: safeDownloadUrl(
+        manifest.downloadUrl,
+        code,
+        process.env.PB_SHORT_LINK_BASE ?? process.env.PB_PUBLIC_API_URL ?? null,
+      ),
       now: session.startedAt,
       price: session.grossAmount,
       loadAsset,

@@ -7,6 +7,7 @@ import {
   booths,
   createBooth,
   createOrg,
+  devices,
   getBooth,
   listBooths,
   listMyOrgs,
@@ -187,6 +188,32 @@ describe('roles and closed tables', () => {
 
   it('withUserContext rejects non-uuid user ids', async () => {
     await expect(withUserContext(db, "x' or 1=1", async () => 1)).rejects.toThrow(/uuid/);
+  });
+});
+
+describe('device identity (audit T3)', () => {
+  it('owners can rename and revoke, but never swap the token hash or un-revoke', async () => {
+    await db.insert(devices).values({
+      id: 'dev-guard',
+      orgId: orgA,
+      boothId: boothA,
+      name: 'Laptop',
+      tokenHash: 'c'.repeat(64),
+    });
+    const update = (set: Partial<typeof devices.$inferInsert>) =>
+      asA((tx) => tx.update(devices).set(set).where(eq(devices.id, 'dev-guard')));
+
+    await update({ name: 'Laptop depan' });
+    await expect(update({ tokenHash: 'd'.repeat(64) })).rejects.toThrow();
+    await update({ revokedAt: new Date() });
+    await expect(update({ revokedAt: null })).rejects.toThrow();
+    // Not even the service connection (API/worker) can restore it.
+    await expect(
+      db.update(devices).set({ revokedAt: null }).where(eq(devices.id, 'dev-guard')),
+    ).rejects.toThrow();
+    const [row] = await db.select().from(devices).where(eq(devices.id, 'dev-guard'));
+    expect(row).toMatchObject({ name: 'Laptop depan', tokenHash: 'c'.repeat(64) });
+    expect(row!.revokedAt).not.toBeNull();
   });
 });
 

@@ -40,7 +40,7 @@ type DriveState = {
   } | null;
 };
 
-/** Result of the Google OAuth round trip (`?drive=` set by apps/api's callback). */
+/** Result of the Google OAuth round trip (`?drive=` set by `integrations/drive/callback`). */
 const DRIVE_FLASH: Record<string, { error: boolean; text: string }> = {
   connected: { error: false, text: 'Google Drive terhubung.' },
   denied: { error: true, text: 'Izin Google Drive tidak diberikan. Coba hubungkan lagi.' },
@@ -54,6 +54,12 @@ const DRIVE_FLASH: Record<string, { error: boolean; text: string }> = {
     text: 'Izin Google Drive yang diberikan tidak lengkap. Hubungkan lagi.',
   },
   not_configured: { error: true, text: 'Server belum dikonfigurasi untuk Google Drive.' },
+  wrong_user: {
+    error: true,
+    text: 'Link persetujuan Google ini dibuat oleh akun lain. Tekan "Hubungkan" sendiri dari halaman ini.',
+  },
+  forbidden: { error: true, text: 'Hanya owner/manager yang dapat menghubungkan Google Drive.' },
+  invalid: { error: true, text: 'Permintaan tidak valid. Mulai lagi dari halaman ini.' },
   error: { error: true, text: 'Gagal menghubungkan Google Drive. Coba lagi.' },
 };
 
@@ -277,9 +283,10 @@ export default async function IntegrationsPage({
         <CardHeader>
           <CardTitle className="text-base">Kandidat refund</CardTitle>
           <CardDescription>
-            Pembayaran QRIS yang lunas setelah kedaluwarsa atau dibatalkan, atau sesi yang sudah
-            dibayar dengan cara lain. Uang ada di akun Midtrans Anda; lakukan refund manual dari
-            dashboard Midtrans.
+            Pembayaran QRIS yang lunas setelah kedaluwarsa atau dibatalkan, sesi yang sudah dibayar
+            dengan cara lain, atau sesi yang sudah lunas tetapi tidak selesai dalam 30 menit (mis.
+            booth sedang tanpa internet saat pembeli membayar). Uang ada di akun Midtrans Anda;
+            lakukan refund manual dari dashboard Midtrans.
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -290,7 +297,8 @@ export default async function IntegrationsPage({
               {refunds.map((r) => (
                 <li key={r.id} className="flex flex-wrap justify-between gap-2 p-3">
                   <span>
-                    Sesi <b>{r.sessionCode}</b> · {idr(r.amount)}
+                    Sesi <b>{r.sessionCode}</b> · {idr(r.amount)} ·{' '}
+                    {r.reason === 'late' ? 'lunas terlambat' : 'lunas, sesi tidak selesai'}
                   </span>
                   <span className="text-xs text-muted-foreground">
                     Order {r.orderId}

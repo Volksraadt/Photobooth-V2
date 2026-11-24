@@ -43,6 +43,13 @@
       "when": 1795551365019,
       "tag": "0005_f6_reports_billing",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1795554992108,
+      "tag": "0006_audit_hardening",
+      "breakpoints": true
     }
   ]
 }

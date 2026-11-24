@@ -75,13 +75,15 @@ export function mapMidtransStatus(
 
 function toUpdate(body: MidtransBody, orderId: string): PaymentStatusUpdate {
   const status = mapMidtransStatus(body.transaction_status, body.fraud_status);
+  // The notification signature is not kept: `raw` is stored and readable by org members.
+  const { signature_key: _signature, ...raw } = body;
   return {
     orderId: body.order_id ?? orderId,
     status,
     grossAmount: parseIdr(body.gross_amount),
     providerRef: body.transaction_id ?? null,
     paidAt: status === 'paid' ? (parseMidtransTime(body.settlement_time) ?? new Date()) : null,
-    raw: body,
+    raw,
   };
 }
 

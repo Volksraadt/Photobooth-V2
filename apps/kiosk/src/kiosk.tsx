@@ -15,7 +15,7 @@ import { PinPad } from './admin/pin-pad';
 import { useCornerTaps } from './admin/use-corner-taps';
 import type { AgentClient } from './agent/agent-client';
 import { DevTools, simulateCameraUnplug } from './dev-tools';
-import { KioskErrorBoundary } from './error-boundary';
+import { KioskErrorBoundary, OverlayErrorBoundary } from './error-boundary';
 import { createKioskMachine } from './flow-host';
 import { useKioskEnvironment } from './kiosk-environment';
 import { usePaymentBridge } from './payment-bridge';
@@ -73,6 +73,10 @@ export function Kiosk({
   const { stream, status } = useCamera(camera);
   const [pinOpen, setPinOpen] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
+  const showNotice = useCallback((message: string) => {
+    setNotice(message);
+    setTimeout(() => setNotice(null), 4000);
+  }, []);
 
   useKioskEnvironment(settings.kiosk);
   usePaymentBridge(actor, snapshot, agent);
@@ -226,34 +230,62 @@ export function Kiosk({
         </div>
       )}
 
+      {(snapshot.matches({ payment: 'confirming' }) ||
+        snapshot.matches({ payment: 'verifying' })) && (
+        <div className="camera-banner" data-testid="payment-confirm-banner" role="status">
+          Menunggu konfirmasi pembayaran… Jika Anda sudah membayar, mohon tunggu di sini.
+        </div>
+      )}
+
       {snapshot.matches('admin') && (
-        <AdminPanel
-          config={snapshot.context.config}
-          camera={camera}
-          cameraChoice={cameraChoice}
-          onCameraChange={onCameraChange}
-          stream={stream}
-          cameraStatus={status}
-          agent={agent}
-          onFreeSession={() => actor.send({ type: 'ADMIN.FREE_SESSION' })}
-          onClose={() => actor.send({ type: 'ADMIN.CLOSE' })}
-        />
+        <OverlayErrorBoundary
+          onCrash={(e) => {
+            actor.send({ type: 'ADMIN.CLOSE' });
+            showNotice(`Panel admin bermasalah dan ditutup: ${e.message}`);
+          }}
+        >
+          <AdminPanel
+            config={snapshot.context.config}
+            camera={camera}
+            cameraChoice={cameraChoice}
+            onCameraChange={onCameraChange}
+            stream={stream}
+            cameraStatus={status}
+            agent={agent}
+            onFreeSession={() => actor.send({ type: 'ADMIN.FREE_SESSION' })}
+            onClose={() => actor.send({ type: 'ADMIN.CLOSE' })}
+          />
+        </OverlayErrorBoundary>
       )}
       {cashOpen && (
-        <PinPad
-          pinHash={snapshot.context.config.admin.pinHash}
-          title="Pembayaran tunai"
-          hint={`Petugas: terima Rp${cashAmount.toLocaleString('id-ID')}, lalu masukkan PIN.`}
-          onSuccess={(pin) => void approveCash(pin)}
-          onCancel={cancelCash}
-        />
+        <OverlayErrorBoundary
+          onCrash={() => {
+            cancelCash();
+            showNotice('PIN pad bermasalah. Coba lagi.');
+          }}
+        >
+          <PinPad
+            pinHash={snapshot.context.config.admin.pinHash}
+            title="Pembayaran tunai"
+            hint={`Petugas: terima Rp${cashAmount.toLocaleString('id-ID')}, lalu masukkan PIN.`}
+            onSuccess={(pin) => void approveCash(pin)}
+            onCancel={cancelCash}
+          />
+        </OverlayErrorBoundary>
       )}
       {pinOpen && (
-        <PinPad
-          pinHash={snapshot.context.config.admin.pinHash}
-          onSuccess={onPinSuccess}
-          onCancel={closePin}
-        />
+        <OverlayErrorBoundary
+          onCrash={() => {
+            closePin();
+            showNotice('PIN pad bermasalah. Coba lagi.');
+          }}
+        >
+          <PinPad
+            pinHash={snapshot.context.config.admin.pinHash}
+            onSuccess={onPinSuccess}
+            onCancel={closePin}
+          />
+        </OverlayErrorBoundary>
       )}
       {notice && (
         <div

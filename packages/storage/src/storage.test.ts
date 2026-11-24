@@ -4,6 +4,7 @@ import { join } from 'node:path';
 import { afterAll, describe, expect, it } from 'vitest';
 import {
   DiskStorage,
+  safeDownloadUrl,
   safeFileName,
   SessionManifestSchema,
   sessionObjectKey,
@@ -68,5 +69,28 @@ describe('manifest', () => {
     });
     expect(ok.success).toBe(true);
     expect(SessionManifestSchema.safeParse({ version: 1 }).success).toBe(false);
+  });
+});
+
+describe('safeDownloadUrl (audit R5)', () => {
+  it("keeps the device's short link only when it is exactly /s/<this code>", () => {
+    expect(safeDownloadUrl('https://pb.test/s/ABCD2345', 'ABCD2345', null)).toBe(
+      'https://pb.test/s/ABCD2345',
+    );
+    expect(safeDownloadUrl('https://foto.custom.id/s/ABCD2345', 'ABCD2345', null)).toBe(
+      'https://foto.custom.id/s/ABCD2345',
+    );
+    for (const bad of [
+      'https://evil.test/phish',
+      'https://pb.test/s/OTHER234',
+      'https://pb.test/s/ABCD2345?next=https://evil.test',
+      'javascript:alert(1)',
+      'not a url',
+    ]) {
+      expect(safeDownloadUrl(bad, 'ABCD2345', 'https://api.pb.test/'), bad).toBe(
+        'https://api.pb.test/s/ABCD2345',
+      );
+    }
+    expect(safeDownloadUrl(null, 'ABCD2345', null)).toBeNull();
   });
 });

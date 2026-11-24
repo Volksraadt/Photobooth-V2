@@ -35,6 +35,7 @@ export type VoucherOutcome = RedeemResult & { offline: boolean };
 const VOUCHER_SYNC_MS = 60_000;
 const PIN_MAX_FAILURES = 5;
 const PIN_LOCK_MS = 60_000;
+const PIN_STATE_KEY = 'cash.pinState';
 
 const isNetworkError = (err: unknown) => !(err instanceof DeviceApiError);
 
@@ -46,7 +47,20 @@ const isNetworkError = (err: unknown) => !(err instanceof DeviceApiError);
 export class MoneyService {
   private timer: ReturnType<typeof setInterval> | null = null;
   private syncing: Promise<void> | null = null;
-  private pin = { failures: 0, lockedUntil: 0 };
+
+  /** Wrong-PIN counter, kept in SQLite so restarting the agent does not reset it (audit R2). */
+  private get pin(): { failures: number; lockedUntil: number } {
+    try {
+      const raw = this.store.getMeta(PIN_STATE_KEY);
+      const v = raw ? (JSON.parse(raw) as { failures?: number; lockedUntil?: number }) : {};
+      return { failures: v.failures ?? 0, lockedUntil: v.lockedUntil ?? 0 };
+    } catch {
+      return { failures: 0, lockedUntil: 0 };
+    }
+  }
+  private set pin(v: { failures: number; lockedUntil: number }) {
+    this.store.setMeta(PIN_STATE_KEY, JSON.stringify(v));
+  }
 
   constructor(
     private readonly store: AgentStore,
@@ -138,6 +152,11 @@ export class MoneyService {
         if (e.status === 409 && e.code === 'in_progress' && attempt < 4) {
           await new Promise((r) => setTimeout(r, 1000));
           continue;
+        }
+        if (e.code === 'already_paid') {
+          // Paid while we could not see it (audit T2): the kiosk continues the session.
+          this.event('payment_already_paid', `Sesi ${input.session.code} sudah lunas di server`);
+          throw new MoneyError('already_paid', e.message, 409);
         }
         this.event('payment_failed', `QRIS gagal dibuat: ${e.message}`, 'warn', { code: e.code });
         throw new MoneyError(
@@ -276,14 +295,15 @@ export class MoneyService {
     if (!s.config.admin.pinHash)
       throw new MoneyError('pin_not_set', 'PIN admin belum diatur di Studio', 409);
     if (!(await verifyAdminPin(input.pin, s.config.admin.pinHash))) {
-      this.pin.failures++;
-      if (this.pin.failures >= PIN_MAX_FAILURES) {
-        this.pin = { failures: 0, lockedUntil: Date.now() + PIN_LOCK_MS };
-      }
+      const failures = this.pin.failures + 1;
+      this.pin =
+        failures >= PIN_MAX_FAILURES
+          ? { failures: 0, lockedUntil: Date.now() + PIN_LOCK_MS }
+          : { failures, lockedUntil: 0 };
       this.event('cash_pin_rejected', 'PIN salah saat persetujuan tunai', 'warn');
       throw new MoneyError('wrong_pin', 'PIN salah', 403);
     }
-    this.pin.failures = 0;
+    this.pin = { failures: 0, lockedUntil: 0 };
     const offline = this.telemetry.isOnline === false;
     const id = createId();
     const approvedAt = new Date().toISOString();

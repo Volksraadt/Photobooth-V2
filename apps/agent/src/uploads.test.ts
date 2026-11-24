@@ -1,5 +1,5 @@
 import { existsSync } from 'node:fs';
-import { mkdtemp, rm } from 'node:fs/promises';
+import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import sharp from 'sharp';
@@ -166,6 +166,29 @@ describe('UploadQueue', () => {
     for (const f of [...s.rows, s.retake, s.strip, s.sheet]) expect(existsSync(f.path)).toBe(false);
     expect(store.session(s.ref.id)!.sync_status).toBe('purged');
     expect(store.uploadSummary().pending).toBe(0);
+  });
+
+  it('a corrupt file in one session does not hold up the others, and is never deleted (audit R4)', async () => {
+    const bad = await makeSession('BADD2345');
+    await writeFile(bad.rows[0]!.path, 'not the photo any more');
+    const good = await makeSession('GOOD2345');
+    const events: string[] = [];
+    const q = new UploadQueue(
+      store,
+      files,
+      api as unknown as DeviceApi,
+      telemetry,
+      { retentionDays: 0, intervalMs: 60_000 },
+      (kind) => events.push(kind),
+      () => new Date(nowMs),
+    );
+    await q.kick();
+
+    expect(api.calls.filter((c) => c.kind === 'complete').map((c) => c.id)).toEqual([good.ref.id]);
+    expect(store.session(good.ref.id)!.sync_status).toBe('purged');
+    expect(store.session(bad.ref.id)!.sync_status).toBe('pending');
+    expect(existsSync(bad.rows[1]!.path)).toBe(true);
+    expect(events).toContain('upload_blocked');
   });
 
   it('offline: keeps every file, backs off, and uploads once the network is back', async () => {

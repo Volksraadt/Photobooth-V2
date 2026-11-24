@@ -251,6 +251,41 @@ describe('QRIS payment', () => {
     expect(p!.status).toBe('pending');
   });
 
+  it('a correctly signed "settlement" that Midtrans does not confirm changes nothing (audit S1)', async () => {
+    const { body } = await createPayment();
+    // Signed with the real key, but the order is still pending at the provider (e.g. a replayed
+    // notification whose unsigned transaction_status was edited).
+    const n = mock().notification(String(body.id), 'settlement');
+    const res = await webhook(n);
+    expect(res.status).toBe(200);
+    expect(res.body).toMatchObject({ ignored: true });
+    const [p] = await db
+      .select()
+      .from(payments)
+      .where(eq(payments.id, String(body.id)));
+    expect(p!.status).toBe('pending');
+  });
+
+  it('stores the provider payload without the notification signature', async () => {
+    const { body } = await createPayment();
+    await webhook(mock().simulatePaid(String(body.id)));
+    const [p] = await db
+      .select()
+      .from(payments)
+      .where(eq(payments.id, String(body.id)));
+    expect(p!.status).toBe('paid');
+    expect(JSON.stringify(p!.raw)).not.toContain('signature_key');
+  });
+
+  it('a session already paid makes a new QRIS answer already_paid (audit T2)', async () => {
+    const session = newSession();
+    const { body } = await createPayment(session);
+    await webhook(mock().simulatePaid(String(body.id)));
+    const again = await createPayment(session);
+    expect(again.status).toBe(409);
+    expect(again.body).toMatchObject({ error: 'already_paid' });
+  });
+
   it('a duplicate webhook does not create a second paid session; device gets one signal', async () => {
     const session = newSession();
     const { body } = await createPayment(session);
@@ -309,15 +344,13 @@ describe('QRIS payment', () => {
       await withUserContext(db, otherUser, (tx) => createOrg(tx, { name: 'Other' }))
     ).id;
     const otherToken = randomToken();
-    await db
-      .insert(devices)
-      .values({
-        id: createId(),
-        orgId: otherOrg,
-        boothId: null,
-        name: 'x',
-        tokenHash: sha256Hex(otherToken),
-      });
+    await db.insert(devices).values({
+      id: createId(),
+      orgId: otherOrg,
+      boothId: null,
+      name: 'x',
+      tokenHash: sha256Hex(otherToken),
+    });
     expect((await call(`/device/payments/${body.id}`, { token: otherToken })).status).toBe(404);
     // and the webhook of another org does not touch it
     const n = mock().simulatePaid(String(body.id));
@@ -328,7 +361,7 @@ describe('QRIS payment', () => {
 });
 
 describe('vouchers + cash + session sync', () => {
-  const code = '123456789012';
+  const code = '1234567890123456';
   beforeAll(async () => {
     await insertVouchers(db, {
       orgId,
@@ -338,7 +371,7 @@ describe('vouchers + cash + session sync', () => {
       valueType: 'full',
       value: 0,
       expiresAt: null,
-      codes: [{ codeHash: hashVoucherCode(boothId, code), last4: '9012' }],
+      codes: [{ codeHash: hashVoucherCode(boothId, code), last4: '3456' }],
       userId: (await db.select().from(auditLogs).limit(1))[0]!.actorId!,
     });
   });
@@ -426,5 +459,35 @@ describe('vouchers + cash + session sync', () => {
       grossAmount: price(),
     });
     expect(row!.syncedAt).not.toBeNull();
+  });
+
+  it('a session record saying "free" never zeroes a session paid by QRIS (audit R3)', async () => {
+    const s = newSession();
+    const { body } = await createPayment(s);
+    await webhook(mock().simulatePaid(String(body.id)));
+    await call('/device/events', {
+      body: {
+        events: [],
+        printJobs: [],
+        sessions: [
+          {
+            id: createId(),
+            session: {
+              ...s,
+              completedAt: new Date().toISOString(),
+              status: 'completed',
+              frameId: config.frames[0]!.id,
+              filterId: config.filters[0]!.id,
+              paymentMethod: 'free',
+              amount: 0,
+              extraPrints: 0,
+              offline: false,
+            },
+          },
+        ],
+      },
+    });
+    const [row] = await db.select().from(sessions).where(eq(sessions.id, s.id));
+    expect(row).toMatchObject({ status: 'completed', paymentMethod: 'qris', grossAmount: price() });
   });
 });

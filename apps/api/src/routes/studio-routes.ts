@@ -17,7 +17,7 @@ import { Hono } from 'hono';
 import { z } from 'zod';
 import { requireOrgEditor } from '../middleware/org-access';
 import { studioBillingRoutes } from './billing-routes';
-import { studioDriveRoutes } from './drive-routes';
+import { studioDriveCompleteRoutes, studioDriveRoutes } from './drive-routes';
 import { userAuth } from '../middleware/user-auth';
 import { encryptCredential } from '../payments/gateway';
 import type { AppEnv } from '../types';
@@ -34,6 +34,7 @@ export function studioRoutes() {
   const app = new Hono<AppEnv>();
   app.use('*', userAuth);
   app.route('/', studioDriveRoutes());
+  app.route('/', studioDriveCompleteRoutes());
   app.route('/', studioBillingRoutes());
 
   app.get('/me', async (c) => {
@@ -66,14 +67,14 @@ export function studioRoutes() {
       );
     }
     try {
-      const { deviceId } = await claimPairingCode(db, {
+      const { deviceId, fingerprint } = await claimPairingCode(db, {
         code: body.data.code,
         boothId: access.booth.id,
         orgId: access.booth.orgId,
         name: body.data.name,
         userId,
       });
-      return c.json({ deviceId }, 201);
+      return c.json({ deviceId, fingerprint }, 201);
     } catch (err) {
       if (err instanceof PairingError) {
         return c.json({ error: `pairing_${err.code}`, message: err.message }, 400);

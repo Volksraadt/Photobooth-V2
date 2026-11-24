@@ -159,7 +159,7 @@ const COMPACT_KEYS: VoucherKey[] = ['1', '2', '3', '4', '5', '6', '7', '8', '9',
   byLabel,
 );
 
-/** 123412341234 → 1234-1234-1234 (as printed on the voucher). */
+/** 1234123412341234 → 1234-1234-1234-1234 (as printed on the voucher). */
 const groupCode = (code: string) => code.replace(/(\d{4})(?=\d)/g, '$1-');
 
 /**

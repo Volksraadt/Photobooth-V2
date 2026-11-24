@@ -3,6 +3,14 @@
 # (`pnpm db:migrate` with DATABASE_URL pointing at the Supabase direct connection).
 project_id = "photobooth-platform"
 
+# Data API (PostgREST) OFF. Studio reads/writes the database only server-side through Drizzle
+# (role `authenticated` + RLS); business rules (plan limits, publish validation, audit log) live
+# in that code. With the Data API on, any signed-in user could call /rest/v1 with the public anon
+# key and bypass them (docs/audit-mvp.md T3). Auth and Storage do not need it.
+# Hosted project: also turn it off in Dashboard → Project Settings → Data API.
+[api]
+enabled = false
+
 [auth]
 site_url = "http://localhost:3000"
 additional_redirect_urls = ["http://localhost:3000/auth/callback"]

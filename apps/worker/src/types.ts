@@ -17,6 +17,8 @@ export type WorkerDeps = {
   log?: (msg: string) => void;
   /** Fetch for config assets (frame overlays, fonts, …). Defaults to global fetch. */
   fetchAsset?: typeof fetch;
+  /** URL prefixes config assets may be fetched from (default: PB_ASSET_URL_PREFIXES / media base). */
+  assetUrlPrefixes?: readonly string[];
 };
 
 /**

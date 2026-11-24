@@ -33,6 +33,8 @@ export const JOB_ERROR_TEXT: Record<string, string> = {
   drive_folder_missing: 'Folder di Google Drive tidak ditemukan. Pilih folder di menu Integrasi.',
   storage_missing: 'File sesi hilang dari penyimpanan server.',
   config_missing: 'Config sesi tidak ditemukan.',
+  asset_rejected:
+    'Aset desain (gambar/font/musik) bukan dari penyimpanan platform atau isinya berubah. Unggah ulang aset di editor lalu publikasikan.',
 };
 
 export function uploadState(s: SessionUploadInput, jobs: JobView[]): UploadState {

@@ -1,9 +1,24 @@
 'use server';
 
 import { PlanLimitError, publishConfig, saveDraft } from '@pb/db';
-import { BoothConfigSchema, validateBoothConfig, type ValidationIssue } from '@pb/schema';
+import {
+  assetUrlPrefixesFromEnv,
+  BoothConfigSchema,
+  disallowedAssetIds,
+  validateBoothConfig,
+  type BoothConfig,
+  type ValidationIssue,
+} from '@pb/schema';
 import { revalidatePath } from 'next/cache';
 import { asUser, requireOrg } from '@/lib/org';
+
+/** Assets must come from the platform's storage (the cloud worker fetches them; see T1 audit). */
+function foreignAssetMessage(config: BoothConfig): string | null {
+  const bad = disallowedAssetIds(config, assetUrlPrefixesFromEnv(process.env));
+  return bad.length
+    ? `Aset ${bad.join(', ')} bukan dari pustaka aset. Unggah ulang lewat pustaka aset.`
+    : null;
+}
 
 export type SaveResult = { ok: true; savedAt: string } | { ok: false; message: string };
 
@@ -24,6 +39,8 @@ export async function saveDraftAction(boothId: string, config: unknown): Promise
     if (!parsed.success)
       return { ok: false, message: 'Bentuk config tidak valid; draft tidak disimpan.' };
     if (parsed.data.boothId !== boothId) return { ok: false, message: 'Config milik booth lain.' };
+    const foreign = foreignAssetMessage(parsed.data);
+    if (foreign) return { ok: false, message: foreign };
     const row = await asUser(user, (tx) =>
       saveDraft(tx, { boothId, config: parsed.data, userId: user.id }),
     );
@@ -43,6 +60,8 @@ export async function publishAction(boothId: string, config: unknown): Promise<P
     }
     if (result.config.boothId !== boothId)
       return { ok: false, message: 'Config milik booth lain.' };
+    const foreign = foreignAssetMessage(result.config);
+    if (foreign) return { ok: false, message: foreign };
     const published = await asUser(user, async (tx) => {
       await saveDraft(tx, { boothId, config: result.config, userId: user.id });
       return publishConfig(tx, { boothId, config: result.config, userId: user.id });

@@ -91,11 +91,15 @@ describe('device auth', () => {
     const token = randomToken();
     const [d] = await db
       .insert(devices)
-      .values({ orgId, name: 'Old', tokenHash: sha256Hex(token), revokedAt: new Date() })
+      .values({ orgId, name: 'Old', tokenHash: sha256Hex(token) })
       .returning({ id: devices.id });
-    expect((await get('/device/me', token)).status).toBe(401);
-    await db.update(devices).set({ revokedAt: null }).where(eq(devices.id, d!.id));
     expect((await get('/device/me', token)).status).toBe(200);
+    await db.update(devices).set({ revokedAt: new Date() }).where(eq(devices.id, d!.id));
+    expect((await get('/device/me', token)).status).toBe(401);
+    // Revocation is final (DB trigger, audit T3).
+    await expect(
+      db.update(devices).set({ revokedAt: null }).where(eq(devices.id, d!.id)),
+    ).rejects.toThrow();
   });
 });
 

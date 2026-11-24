@@ -350,7 +350,7 @@ Rekap dihitung dari `sessions` + `payments` + `print_jobs`. Untuk performa, buat
 ### B.9 Ketetapan F4 (migrasi `0003_f4_payments.sql`)
 - `payment_credentials`: tambah `client_key` (bukan secret), `is_active` (indeks unik parsial `(org_id, provider) WHERE is_active`: satu env aktif), `last_test_message`. `encrypted_secret` = SecretBox dari JSON `{ "serverKey": … }`, AAD `org:<orgId>:payment:midtrans:<env>`. Tetap tanpa policy RLS (hanya API).
 - `payments`: tambah `env` (env kredensial saat charge; webhook diverifikasi dengan key env ini), `device_id`, `last_checked_at` (batas query status ke provider saat polling, 3 dtk). `id` = `order_id` = cuid2 dari agent per percobaan. Indeks `(org_id, status)` untuk daftar `paid_late`.
-- `vouchers`: tambah `batch_id`, `note`, `used_offline`. `code_hash` = hex PBKDF2-SHA256(kode 12 digit, salt `pb-voucher:v1:<boothId>`, 20.000 iterasi, 32 byte) — `hashVoucherCode()` di `@pb/crypto`. `code_last4` = 4 digit terakhir.
+- `vouchers`: tambah `batch_id`, `note`, `used_offline`. `code_hash` = hex PBKDF2-SHA256(kode 16 digit — sebelum audit 12 digit, salt `pb-voucher:v1:<boothId>`, 20.000 iterasi, 32 byte) — `hashVoucherCode()` di `@pb/crypto`. `code_last4` = 4 digit terakhir.
 - `cash_approvals`: tambah `device_id`, `approved_at`; `id` = id outbox agent (idempotent). `approved_by_pin_of` `null` = PIN admin booth.
 - `fee_settings`: seed `midtrans/qris 0.7000 %, fixed 0, effective_from 2024-01-01`.
 - `sessions`: dibuat API saat kontak pertama (charge QRIS, redeem voucher, tunai, atau sinkron sesi) dengan `id` + `code` dari kiosk; `payment_method`, `gross/fee/net_amount` diisi oleh pembayaran (QRIS: nominal tagihan, fee dari `fee_settings`; voucher/tunai: harga frame, fee 0; free: 0). `offline` = dibayar saat device offline. `synced_at` = catatan sesi lengkap diterima.
@@ -371,6 +371,14 @@ Rekap dihitung dari `sessions` + `payments` + `print_jobs`. Untuk performa, buat
 - `devices`: tambah `outbox_pending`, `uploads_pending` (dari heartbeat), `paper_capacity`, `paper_loaded_at`.
 - View `daily_booth_stats` (materialized): `org_id, booth_id, day (tanggal zona booth), sessions, gross, fee, net, extra_prints, offline_sessions, {qris,voucher,cash}_{sessions,gross}, free_sessions` untuk `sessions.payment_method IS NOT NULL`. Indeks unik `(booth_id, day)`; akses langsung ditutup; Studio memakai `daily_booth_stats_v` (lihat decisions F6).
 - Sumber agregasi rekap: `getReport()` (`packages/db/src/report-repo.ts`): hari < hari ini booth dari view, hari ini dan filter perangkat dari `sessions`; jam/frame/filter/lembar cetak selalu dari `sessions`/`print_jobs` dengan zona booth.
+
+### B.12 Ketetapan audit MVP (migrasi `0006_audit_hardening.sql`, `docs/audit-mvp.md`)
+- Trigger `devices_guard_identity` (`app.guard_device_identity()`): `devices.token_hash` dan `devices.org_id` tidak bisa diubah; `revoked_at` yang sudah terisi tidak bisa dikosongkan atau diganti. Berlaku untuk semua koneksi (Studio, Data API, service). Pairing ulang selalu membuat baris device baru.
+- `payments.raw`: `signature_key` notifikasi tidak disimpan lagi; migrasi menghapusnya dari baris lama.
+- Kandidat tindak lanjut (`listRefundCandidates`) kini juga memuat payment `paid` yang sesinya belum `completed` 30 menit setelah lunas (`reason: 'incomplete'`), selain `paid_late` (`reason: 'late'`). Tanpa kolom baru.
+- `AssetRef.url` (A): bentuk zod tidak berubah, tetapi Studio menolak simpan/publish dan worker menolak mengambil URL di luar penyimpanan aset platform (`isAllowedAssetUrl`, `PB_ASSET_URL_PREFIXES`; `data:` bawaan tetap boleh). Worker juga mencocokkan sha256 + batas 100 MB. Tidak perlu kenaikan `schemaVersion`.
+- `admin.pinHash` (A): format tetap; Studio hanya menerima PIN baru 6–8 digit (`NEW_ADMIN_PIN_RE`), booth tetap menerima PIN lama 4 digit (`ADMIN_PIN_RE`).
+- Supabase: Data API (PostgREST) dimatikan (`supabase/config.toml` `[api] enabled = false`; proyek hosted lewat dashboard). Studio tidak pernah memakainya.
 
 ---
 
@@ -415,7 +423,7 @@ File `agent.sqlite` di folder data agent (Windows `%APPDATA%\photobooth-agent`, 
 - Kode voucher tidak pernah disimpan di agent; hanya hash (lihat B.9).
 
 ### A.7 Ketetapan F4 (renderer, tanpa perubahan schema)
-- `voucher-input` varian `keypad`: baris tampilan kode/status + keypad 3×4. Varian `field`: kolom setinggi `min(height, fontSize × 2,4)`; bila sisa tinggi kotak ≥ 1,2 × tinggi kolom, keypad ringkas 6×2 digambar di sisa kotak (editor dan kiosk sama). Keduanya menerima keyboard/scanner di mode live. Kode ditampilkan `1234-5678-9012`.
+- `voucher-input` varian `keypad`: baris tampilan kode/status + keypad 3×4. Varian `field`: kolom setinggi `min(height, fontSize × 2,4)`; bila sisa tinggi kotak ≥ 1,2 × tinggi kolom, keypad ringkas 6×2 digambar di sisa kotak (editor dan kiosk sama). Keduanya menerima keyboard/scanner di mode live. Kode ditampilkan `1234-5678-9012-3456` (16 digit sejak audit S4).
 - `qris` dan `payment-timer` tidak digambar di mode live bila `runtime.qrisHidden` (device offline atau QRIS tidak aktif).
 
 ### C.3 Ketetapan F5 (SQLite `user_version` 3)

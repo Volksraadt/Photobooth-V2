@@ -5,6 +5,7 @@ import type { ObjectStorage } from '@pb/storage';
 import type { BillingGateway } from './billing/gateway';
 import type { PaymentGateway } from './payments/gateway';
 import type { DeviceSignals } from './payments/device-signals';
+import type { RateLimiter } from './middleware/rate-limit';
 
 export type AuthedDevice = { id: string; orgId: string; boothId: string | null; name: string };
 
@@ -36,6 +37,8 @@ export type AppDeps = {
   billing?: BillingGateway;
   /** F6: e-mails (any case) of platform admins. */
   platformAdmins?: string[];
+  /** Per-IP limits for unauthenticated endpoints (audit S2). */
+  rateLimiter?: RateLimiter;
 };
 
 export type ResolvedDeps = Required<AppDeps>;
