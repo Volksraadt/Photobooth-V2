@@ -529,6 +529,10 @@ export const flowMachine = setup({
               const takes = context.session!.takes.filter((t) => t.slotIndex === slotIndex);
               return {
                 sessionId: context.session!.id,
+                sessionCode: context.session!.code,
+                startedAt: context.session!.startedAt,
+                boothId: context.config.boothId,
+                configVersion: context.config.configVersion,
                 slotIndex,
                 takeNumber: takes.length + 1,
               };

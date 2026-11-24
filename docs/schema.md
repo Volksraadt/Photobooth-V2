@@ -229,7 +229,7 @@ Diterjemahkan ke CSS `filter` + overlay di renderer, dan ke operasi `sharp` di c
 - Warna: satu transformasi afin pada nilai sRGB 0..1, `out = M·rgb + offset`, di-clamp ke 0..1 sekali di akhir. `M`/`offset` = komposisi berurutan: brightness `diag(b)` → contrast `c·(v−0,5)+0,5` → saturation (matriks `saturate` Filter Effects) → hueRotate (matriks `hue-rotate`) → sepia (matriks `sepia`, jumlah = `sepia`) → warmth `diag(1+0,15w, 1+0,03w, 1−0,15w)`. Fungsi: `filterColorMatrix(params)`.
 - Vignette: overlay hitam, alpha = `vignette × clamp((d − 0,45) / 0,55, 0, 1)`, `d` = jarak eliptis dari pusat (1 di sudut; CSS `ellipse farthest-corner`).
 - Grain: noise monokrom (rata-rata 0,5), blend `overlay`, opacity `grain × 0,5`. Tidak identik per piksel; dibandingkan secara statistik.
-- Renderer: SVG `feColorMatrix` (`color-interpolation-filters: sRGB`) + dua overlay. Compositor (F3): `sharp.recomb(M)` + `linear(1, offset·255)` + composite overlay.
+- Renderer: SVG `feColorMatrix` (`color-interpolation-filters: sRGB`) + dua overlay. Compositor (F3): matriks yang sama diterapkan per piksel di JS (`applyFilter`, hasil identik dengan `applyFilterColorMatrix`) setelah `sharp` mendekode/crop; vignette dan grain dengan rumus di atas. Tidak memakai `sharp.recomb` + `linear` karena sharp meng-clamp ke 8 bit di antara keduanya, sedangkan definisi hanya meng-clamp sekali.
 
 ### A.5 Aset
 ```ts
@@ -358,3 +358,22 @@ Rekap dihitung dari `sessions` + `payments` + `print_jobs`. Untuk performa, buat
 | `local_files` | path file, jenis, status upload |
 | `local_vouchers` | code_hash, booth_id, used_at, synced |
 | `outbox` | event yang menunggu dikirim (heartbeat tertunda, device_events, pemakaian voucher) |
+
+### C.1 Ketetapan F3 (`apps/agent/src/store.ts`, `node:sqlite`)
+File `agent.sqlite` di folder data agent (Windows `%APPDATA%\photobooth-agent`, macOS `~/Library/Application Support/photobooth-agent`, Linux `$XDG_DATA_HOME/photobooth-agent`; installer: folder data aplikasi Tauri `…/agent`; dev dari repo: `.data/agent`). Migrasi lewat `pragma user_version`. Waktu = ISO 8601 UTC.
+
+| Tabel | Kolom |
+|---|---|
+| `meta` | key, value — pengaturan lokal: `agent.id`, `camera.source` (`webcam`\|`tablet`), `printer.name` |
+| `config_cache` | version (PK), config_id, etag, config (JSON), asset_paths (JSON assetId → path), activated_at |
+| `local_sessions` | id, code (unik), booth_id, config_version, frame_id, filter_id, payment_method, amount, extra_prints, status (`capturing`\|`completed`\|`failed`), download_url, data (JSON), started_at, completed_at, sync_status, created_at, updated_at |
+| `local_files` | id, session_id, kind (`original`\|`composite`\|`print`), slot_index, take_number, path, mime_type, width, height, bytes, sha256, source (`tablet`\|`webcam`\|`mock`\|`agent`), selected, captured_at, upload_status, created_at |
+| `local_vouchers` | code_hash, booth_id, used_at, synced (dipakai F4) |
+| `outbox` | id (cuid2, juga id baris di API), kind (`device_event`\|`print_job`), payload (JSON), created_at, attempts, next_attempt_at, last_error |
+| `camera_pairings` | id, name, platform, token_hash (sha256 token kamera), created_at, last_seen_at, revoked_at |
+| `print_jobs` | id, session_id, sheets, printer, status (`queued`\|`printing`\|`done`\|`failed`), file_path, os_job_id, error, created_at, updated_at |
+
+- File sesi: `sessions/<YYYY-MM-DD UTC>/<KODE>/original|composite|print/`, ditulis dengan fsync. Tidak ada penghapusan di F3 (upload = F5). Aset config: `assets/<sha256>` (content-addressed, diverifikasi). Token device: file `device-token` (mode 0600).
+- Outbox: dikirim per 100 ke `POST /device/events`; API menyimpan dengan id yang sama (`on conflict do nothing`) dan membalas id yang tersimpan → pengiriman ulang tidak menggandakan baris. Gagal → backoff 10 dtk × 2ⁿ (maks. 10 menit).
+- `print_jobs` di API: `session_id` diisi hanya bila sesi dengan kode tersebut sudah ada di org (sesi baru diunggah di F5); `sheets` tetap tercatat untuk estimasi kertas.
+- Heartbeat F3 menambah `printerStatus` (`ok`\|`warning`\|`error`\|`disconnected`\|`unknown`) → `devices.printer_status`. Tanpa migrasi DB (kolom sudah ada sejak F0).

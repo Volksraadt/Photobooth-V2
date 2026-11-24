@@ -50,6 +50,7 @@
   - `/oauth/google/*` — callback koneksi Google Drive.
 - Studio juga memanggil API untuk aksi sensitif (simpan kredensial, tes koneksi).
 - Sudah ada (F2): `POST /pair/start`, `POST /pair/status` (tanpa auth; Kiosk membuktikan token lewat hash), `GET /device/config` (ETag/304, 204 = belum ada publish), `GET /device/stream` (SSE `config` saat booth dipublish, dari `LISTEN pb_booth_config`), `POST /device/heartbeat`, `POST /studio/pairing/claim` (token user; owner/manager). CORS terbuka untuk `/device/*` dan `/pair/*` (auth token, tanpa cookie).
+  - Ditambah F3: `POST /device/events` (outbox agent: `device_events` + `print_jobs`, idempotent per id, balasan = id yang tersimpan), `printerStatus` di `POST /device/heartbeat`. Sejak F3 pemanggil `/pair/*` dan `/device/*` adalah Local Agent, bukan Kiosk.
 
 ### 2.3 Worker (`apps/worker`)
 - BullMQ + Redis. Job:
@@ -62,8 +63,10 @@
 - Vite + React, dibungkus **Tauri** (ringan, jalan di Windows/macOS/Linux; Raspberry Pi nanti via build Linux ARM).
 - Mode fullscreen, kursor disembunyikan, cegah sleep layar.
 - Menjalankan `packages/flow` (XState). State machine memanggil renderer untuk halaman aktif.
-- Berkomunikasi dengan Agent lewat `http://127.0.0.1:<port>` + WebSocket. Tidak pernah memegang secret.
-- Config + aset (gambar, font, video) di-cache lewat Agent; Kiosk tetap jalan saat offline.
+- Berkomunikasi dengan Agent lewat `http://127.0.0.1:47810` + WebSocket `/ws`. Tidak pernah memegang secret (token device pun dipegang agent sejak F3).
+- Config + aset (gambar, font, video) di-cache lewat Agent (`GET /config/state`, `/assets/<sha256>`); Kiosk tetap jalan saat offline.
+- Tanpa agent (mode browser/dev, `?agent=0`) Kiosk berjalan seperti F1: foto di IndexedDB, cetak disimulasikan.
+- Tauri (F3): `apps/kiosk/src-tauri` membuka satu jendela fullscreen tanpa dekorasi dan menjalankan agent sebagai sidecar (runtime Node + bundel agent + modul native `sharp`/`@napi-rs/canvas` sebagai resource), me-restart agent bila berhenti. CSP hanya mengizinkan `127.0.0.1:47810`. Installer: NSIS/MSI (Windows), DMG/app (macOS) lewat workflow CI.
 
 ### 2.5 Local Agent (`apps/agent`)
 - Node service yang dipasang bersama Kiosk (sidecar Tauri).
@@ -76,6 +79,11 @@
   - **Server LAN** untuk Camera App: signaling WebRTC + endpoint terima foto.
   - Heartbeat dan event log ke API.
   - Nanti: kontrol DSLR (`gphoto2` / Canon EDSDK).
+- Implementasi F3 (`apps/agent`): Hono + `ws`, SQLite `node:sqlite` (lihat `docs/schema.md` C.1).
+  - API Kiosk di `127.0.0.1:47810` (cek Host anti DNS-rebinding + daftar origin: Tauri dan dev server): `/status`, `/config/state`, `/config/refresh`, `/device/reset`, `/assets/:sha256`, `/sessions/:id/shots` (foto webcam), `/sessions/:id/capture` (foto tablet), `/files/:id`, `/process` (compose + cetak), `/sessions`, `/printers`, `/printer`, `/print/test`, `/camera`, `/camera/pairing`, `/settings`; WebSocket `/ws` (status kamera, versi config, status printer, progres processing, relay signaling WebRTC).
+  - Server LAN `0.0.0.0:47811` khusus Camera App: `/camera/ping`, `/camera/pair` (kode sekali pakai → token kamera), `/camera/shots?requestId=` (Bearer token kamera, maks. 60 MB), WebSocket `/camera/ws` (pesan pertama `hello` + token). Protokol: `packages/capture/src/tablet-protocol.ts`.
+  - Tablet putus: ping tiap 2 dtk, tanpa pong 5 dtk → dianggap putus (Wi-Fi mati tidak menutup TCP dengan cepat). Permintaan capture menunggu sampai 60 dtk dan dikirim ulang saat tablet tersambung lagi; upload idempotent per `requestId`; upload yang terlambat tetap disimpan.
+  - Cetak: Windows = PowerShell `System.Drawing.Printing` (spooler, tanpa dialog, kertas 4×6 driver bila ada, gambar full page); macOS/Linux = `lp -o media=w288h432 -o fit-to-page`. Printer virtual (file) untuk dev/test. Job `done` = diterima spooler/CUPS.
 
 ### 2.6 Camera App (`apps/camera`)
 - React + **Capacitor** (iOS dan Android).
@@ -89,6 +97,7 @@
   3. Preview: WebRTC peer-to-peer tablet → Kiosk (resolusi sedang, ±720p, latensi rendah).
   4. Saat `capture`: Kiosk → Agent → Camera App. Camera App mengambil foto resolusi penuh dengan kamera native, lalu `POST` ke Agent. Agent membalas setelah file tersimpan.
 - Pengaturan di Camera App: kamera depan/belakang, kunci orientasi, kecerahan layar, cegah sleep.
+- Implementasi F3 (`apps/camera`, Capacitor 8, proyek `android/` + `ios/`): pindai QR dengan jsQR, token kamera di Preferences, WebSocket dengan reconnect cepat (300 ms → 3 dtk, berganti host), WebRTC pengirim (H.264 diutamakan, ≤ 1280×720, 30 fps, 2,5 Mbps, `maintain-framerate`). Foto resolusi penuh: `ImageCapture.takePhoto` di ukuran maksimum sensor (Android WebView/Chromium); iOS: plugin `@capacitor-community/camera-preview` (track preview dilepas sebentar, foto native, preview dinyalakan lagi). Foto disimpan di IndexedDB sampai agent membalas 200 (bertahan walau Wi-Fi putus atau app ditutup). Kiosk adalah penerima WebRTC (offer recvonly, `jitterBufferTarget = 0`).
 
 ## 3. Abstraksi kunci
 
@@ -109,6 +118,7 @@ interface CaptureSource {
 ```
 - Mirror hanya diterapkan di tampilan (`camera-view`) dan di file `mirrored/`. File original disimpan tanpa mirror.
 - Implementasi F1: `webcam` (getUserMedia; frame diambil dari track pada resolusi aslinya; event `ended` = dicabut) dan `mock` (pola uji/gambar statis, `simulateDisconnect()` untuk test).
+- F3: `tablet` (`createTabletSource({ agent })`): status dari agent (`reconnecting` selama tablet putus ≤ 60 dtk, baru `error` setelahnya), preview WebRTC, `capture({ shotIndex, session })` → agent → tablet, mengembalikan `stored: { photoId, url }` (`blob: null`). `capture` menerima konteks sesi opsional; `onPreviewChange` opsional untuk stream baru setelah negosiasi ulang.
 
 ### 3.2 `PaymentProvider` (`packages/payments`)
 ```ts

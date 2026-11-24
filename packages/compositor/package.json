@@ -11,5 +11,14 @@
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "lint": "eslint src",
     "test": "vitest run --passWithNoTests"
+  },
+  "dependencies": {
+    "@napi-rs/canvas": "^1.2.0",
+    "@pb/renderer": "workspace:*",
+    "@pb/schema": "workspace:*",
+    "sharp": "^0.35.5"
+  },
+  "devDependencies": {
+    "jsqr": "^1.4.0"
   }
 }

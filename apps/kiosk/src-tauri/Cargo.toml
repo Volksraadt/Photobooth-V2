@@ -1,0 +1,25 @@
+[package]
+name = "photobooth-kiosk"
+version = "0.3.0"
+description = "Photobooth kiosk (booth screen) with the local agent as a sidecar"
+edition = "2021"
+publish = false
+
+[lib]
+name = "photobooth_kiosk_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = [] }
+tauri-plugin-shell = "2"
+serde_json = "1"
+tokio = { version = "1", features = ["time"] }
+
+[profile.release]
+codegen-units = 1
+lto = true
+opt-level = "s"
+strip = true

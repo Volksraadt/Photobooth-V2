@@ -14,7 +14,7 @@ describe('mock capture source', () => {
 
     const shot = await source.capture({ shotIndex: 2 });
     expect(shot).toMatchObject({ width: 640, height: 480, shotIndex: 2, sourceId: 'mock' });
-    expect(shot.blob.size).toBeGreaterThan(0);
+    expect(shot.blob!.size).toBeGreaterThan(0);
     expect(new Date(shot.capturedAt).toISOString()).toBe(shot.capturedAt);
     expect(seen).toEqual(['connecting', 'connected']);
   });

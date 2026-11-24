@@ -85,6 +85,8 @@ function PreviewPlayer({
         connectCamera: fromPromise(() => camera.connect()),
         captureShot: fromPromise<ShotPhoto, CaptureShotInput>(async ({ input }) => {
           const img = await camera.capture({ shotIndex: input.slotIndex });
+          // Webcam/mock always return bytes (only the tablet source stores stills in the agent).
+          if (!img.blob) throw new Error('Kamera tidak mengirim foto.');
           const url = URL.createObjectURL(img.blob);
           urls.push(url);
           return {

@@ -138,6 +138,15 @@ export type CreatePaymentOutput = {
   expiresAt: string;
 };
 
-export type CaptureShotInput = { sessionId: string; slotIndex: number; takeNumber: number };
+export type CaptureShotInput = {
+  sessionId: string;
+  sessionCode: string;
+  /** ISO 8601, UTC. */
+  startedAt: string;
+  boothId: string;
+  configVersion: number;
+  slotIndex: number;
+  takeNumber: number;
+};
 
 export type ProcessSessionInput = { config: BoothConfig; session: FlowSession };

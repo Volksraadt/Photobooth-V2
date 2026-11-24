@@ -174,3 +174,21 @@ body {
   color: #ffffff;
   font-weight: 700;
 }
+
+/* Tablet camera dropped (system status, not owner design). */
+.camera-banner {
+  position: fixed;
+  top: 24px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 40;
+  padding: 14px 28px;
+  border-radius: 999px;
+  background: rgba(185, 28, 28, 0.92);
+  color: #fff;
+  font:
+    600 22px/1.2 system-ui,
+    sans-serif;
+  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.35);
+  pointer-events: none;
+}

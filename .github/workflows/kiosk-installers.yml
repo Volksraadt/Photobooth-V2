@@ -1,0 +1,49 @@
+name: Kiosk installers
+
+# Builds the Tauri kiosk (with the local agent as a sidecar) for Windows and macOS.
+# Unsigned for now: code signing / notarization certificates are an open question.
+on:
+  workflow_dispatch:
+  push:
+    tags: ['kiosk-v*']
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            bundles: nsis,msi
+          - os: macos-latest # Apple Silicon
+            bundles: dmg,app
+          - os: macos-13 # Intel
+            bundles: dmg,app
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
+    env:
+      # Baked into the kiosk shell and passed to the agent (see src-tauri/src/lib.rs).
+      PB_API_URL: ${{ vars.PB_API_URL }}
+      PB_SHORT_LINK_BASE: ${{ vars.PB_SHORT_LINK_BASE }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: swatinem/rust-cache@v2
+        with:
+          workspaces: apps/kiosk/src-tauri
+      - run: pnpm install --frozen-lockfile
+      # beforeBuildCommand: kiosk vite build + agent bundle (node runtime, native modules for this OS).
+      - run: pnpm --filter @pb/kiosk exec tauri build --bundles ${{ matrix.bundles }}
+      - uses: actions/upload-artifact@v4
+        with:
+          name: kiosk-${{ matrix.os }}
+          path: |
+            apps/kiosk/src-tauri/target/release/bundle/nsis/*.exe
+            apps/kiosk/src-tauri/target/release/bundle/msi/*.msi
+            apps/kiosk/src-tauri/target/release/bundle/dmg/*.dmg
+          if-no-files-found: error

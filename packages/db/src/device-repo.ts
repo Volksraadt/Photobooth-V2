@@ -1,8 +1,17 @@
 import { createId } from '@paralleldrive/cuid2';
 import type { BoothConfig } from '@pb/schema';
-import { and, count, eq, isNull, lt } from 'drizzle-orm';
+import { and, count, eq, inArray, isNull, lt } from 'drizzle-orm';
 import { getOrgPlan, PlanLimitError } from './booth-repo';
-import { auditLogs, boothConfigs, booths, devices, pairingCodes } from './schema';
+import {
+  auditLogs,
+  boothConfigs,
+  booths,
+  deviceEvents,
+  devices,
+  pairingCodes,
+  printJobs,
+  sessions,
+} from './schema';
 import type { Db, Tx } from './types';
 
 /**
@@ -149,6 +158,7 @@ export async function recordHeartbeat(
     appVersion?: string | null;
     platform?: string | null;
     cameraStatus?: 'ok' | 'error' | 'disconnected' | 'unknown';
+    printerStatus?: 'ok' | 'warning' | 'error' | 'disconnected' | 'unknown';
   },
 ) {
   await db
@@ -159,6 +169,111 @@ export async function recordHeartbeat(
       ...(input.appVersion ? { appVersion: input.appVersion } : {}),
       ...(input.platform ? { platform: input.platform } : {}),
       ...(input.cameraStatus ? { cameraStatus: input.cameraStatus } : {}),
+      ...(input.printerStatus ? { printerStatus: input.printerStatus } : {}),
     })
     .where(and(eq(devices.id, device.id), eq(devices.orgId, device.orgId)));
+}
+
+export type DeviceEventInput = {
+  /** Agent outbox id: makes delivery idempotent (retries after a lost response). */
+  id: string;
+  level: 'info' | 'warn' | 'error';
+  kind: string;
+  message: string | null;
+  data: unknown;
+  occurredAt: Date;
+};
+
+export type DevicePrintJobInput = {
+  id: string;
+  sessionCode: string | null;
+  sheets: number;
+  status: 'queued' | 'printing' | 'done' | 'failed';
+  occurredAt: Date;
+};
+
+/**
+ * Stores events and print jobs sent from a device's outbox, scoped to the device org.
+ * Rows are keyed by the outbox id, so re-sending a batch inserts nothing twice. Returns the
+ * ids that are now stored (new or already present). A print job links to its session only if
+ * that session (by code) already exists in the same org.
+ */
+export async function recordDeviceOutbox(
+  db: Db,
+  device: { id: string; orgId: string },
+  input: { events: DeviceEventInput[]; printJobs: DevicePrintJobInput[] },
+): Promise<string[]> {
+  const accepted: string[] = [];
+  if (input.events.length) {
+    await db
+      .insert(deviceEvents)
+      .values(
+        input.events.map((e) => ({
+          id: e.id,
+          orgId: device.orgId,
+          deviceId: device.id,
+          level: e.level,
+          kind: e.kind,
+          message: e.message,
+          data: e.data ?? null,
+          occurredAt: e.occurredAt,
+        })),
+      )
+      .onConflictDoNothing({ target: deviceEvents.id });
+    const stored = await db
+      .select({ id: deviceEvents.id })
+      .from(deviceEvents)
+      .where(
+        and(
+          eq(deviceEvents.orgId, device.orgId),
+          eq(deviceEvents.deviceId, device.id),
+          inArray(
+            deviceEvents.id,
+            input.events.map((e) => e.id),
+          ),
+        ),
+      );
+    accepted.push(...stored.map((r) => r.id));
+  }
+  if (input.printJobs.length) {
+    const codes = [
+      ...new Set(input.printJobs.map((j) => j.sessionCode).filter((c): c is string => !!c)),
+    ];
+    const known = codes.length
+      ? await db
+          .select({ id: sessions.id, code: sessions.code })
+          .from(sessions)
+          .where(and(eq(sessions.orgId, device.orgId), inArray(sessions.code, codes)))
+      : [];
+    const byCode = new Map(known.map((s) => [s.code, s.id]));
+    await db
+      .insert(printJobs)
+      .values(
+        input.printJobs.map((j) => ({
+          id: j.id,
+          orgId: device.orgId,
+          deviceId: device.id,
+          sessionId: j.sessionCode ? (byCode.get(j.sessionCode) ?? null) : null,
+          sheets: j.sheets,
+          status: j.status,
+          occurredAt: j.occurredAt,
+        })),
+      )
+      .onConflictDoNothing({ target: printJobs.id });
+    const stored = await db
+      .select({ id: printJobs.id })
+      .from(printJobs)
+      .where(
+        and(
+          eq(printJobs.orgId, device.orgId),
+          eq(printJobs.deviceId, device.id),
+          inArray(
+            printJobs.id,
+            input.printJobs.map((j) => j.id),
+          ),
+        ),
+      );
+    accepted.push(...stored.map((r) => r.id));
+  }
+  return accepted;
 }

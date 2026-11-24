@@ -5,7 +5,8 @@
   "type": "module",
   "description": "CaptureSource interface + sources",
   "exports": {
-    ".": "./src/index.ts"
+    ".": "./src/index.ts",
+    "./protocol": "./src/tablet-protocol.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit -p tsconfig.json",

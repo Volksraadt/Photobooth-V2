@@ -1,0 +1,48 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "Photobooth Kiosk",
+  "version": "0.3.0",
+  "identifier": "id.photobooth.kiosk",
+  "build": {
+    "beforeDevCommand": "pnpm dev",
+    "devUrl": "http://localhost:5173",
+    "beforeBuildCommand": "pnpm build && pnpm --dir ../agent bundle",
+    "frontendDist": "../dist"
+  },
+  "app": {
+    "windows": [
+      {
+        "label": "main",
+        "title": "Photobooth Kiosk",
+        "width": 1280,
+        "height": 800,
+        "fullscreen": true,
+        "decorations": false,
+        "resizable": true
+      }
+    ],
+    "security": {
+      "csp": "default-src 'self'; connect-src 'self' http://127.0.0.1:47810 ws://127.0.0.1:47810; img-src 'self' data: blob: http://127.0.0.1:47810; media-src 'self' blob: mediastream: http://127.0.0.1:47810; font-src 'self' data: http://127.0.0.1:47810; style-src 'self' 'unsafe-inline'; script-src 'self'"
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": ["nsis", "msi", "dmg", "app"],
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/icon.png",
+      "icons/icon.ico",
+      "icons/icon.icns"
+    ],
+    "externalBin": ["binaries/pb-agent"],
+    "resources": { "resources/agent/": "agent/" },
+    "category": "Utility",
+    "shortDescription": "Layar booth photobooth",
+    "windows": { "nsis": { "installMode": "perMachine" } },
+    "macOS": {
+      "minimumSystemVersion": "11.0",
+      "entitlements": null
+    }
+  }
+}

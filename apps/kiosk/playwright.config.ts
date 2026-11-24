@@ -5,6 +5,7 @@ const PORT = 5174;
 // Runs the kiosk dev server with a freshly generated default config (e2e/.tmp, not your local file).
 export default defineConfig({
   testDir: './e2e',
+  testIgnore: /f3-.*.spec.ts$/,
   timeout: 90_000,
   fullyParallel: false,
   workers: 1,
@@ -32,6 +33,11 @@ export default defineConfig({
     url: `http://localhost:${PORT}/booth-config.json`,
     reuseExistingServer: false,
     timeout: 120_000,
-    env: { PB_KIOSK_PORT: String(PORT), PB_KIOSK_CONFIG: 'e2e/.tmp/booth-config.json' },
+    // Browser-only mode (no local agent): F1 behavior. The F3 suite (playwright.f3.config.ts) runs the agent.
+    env: {
+      PB_KIOSK_PORT: String(PORT),
+      PB_KIOSK_CONFIG: 'e2e/.tmp/booth-config.json',
+      VITE_AGENT_URL: '0',
+    },
   },
 });

@@ -1,7 +1,9 @@
 import { expect, type BrowserContext, type Page } from '@playwright/test';
 import type { BoothConfig } from '@pb/schema';
 
-export const KIOSK_URL = 'http://localhost:5173/?source=api&capture=mock&dev=1&kiosk=0';
+export const KIOSK_URL = 'http://localhost:5173/?source=agent&capture=mock&dev=1&kiosk=0';
+/** Local agent of `pnpm dev` (F3: owns pairing + config sync for the kiosk). */
+export const AGENT_URL = 'http://127.0.0.1:47810';
 const PASSWORD = 'e2e-password-123';
 
 /** New user + org + booth from a template; returns the booth page URL. */
@@ -34,6 +36,8 @@ export function editorDoc(page: Page): Promise<BoothConfig> {
 
 /** Kiosk tab (own context page): shows a pairing code; Studio claims it. */
 export async function pairKiosk(context: BrowserContext, studio: Page, boothUrl: string) {
+  // One agent per machine: unpair it from the previous test's booth first.
+  expect((await studio.request.post(`${AGENT_URL}/device/reset`)).ok()).toBe(true);
   const kiosk = await context.newPage();
   await kiosk.goto(KIOSK_URL);
   const codeEl = kiosk.getByTestId('pairing-code');

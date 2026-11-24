@@ -1,0 +1,7 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "default",
+  "description": "The kiosk webview needs no Tauri APIs: it talks to the local agent over HTTP/WS.",
+  "windows": ["main"],
+  "permissions": ["core:default"]
+}

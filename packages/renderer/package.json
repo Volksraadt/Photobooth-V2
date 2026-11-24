@@ -5,7 +5,8 @@
   "type": "module",
   "description": "React DOM renderer for booth pages",
   "exports": {
-    ".": "./src/index.ts"
+    ".": "./src/index.ts",
+    "./pure": "./src/pure.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit -p tsconfig.json",

@@ -23,6 +23,8 @@ export function useCamera(source: CaptureSource): {
       }
     };
     const unsubscribe = source.onStatusChange(sync);
+    // Tablet: a renegotiated WebRTC peer brings a new stream while staying `connected`.
+    const offPreview = source.onPreviewChange?.((s) => alive && setStream(s));
     sync(source.status());
     source.connect().catch((err: unknown) => {
       // Not fatal here: the flow retries on entering Capture and shows the Error page there.
@@ -31,6 +33,7 @@ export function useCamera(source: CaptureSource): {
     return () => {
       alive = false;
       unsubscribe();
+      offPreview?.();
     };
   }, [source]);
 

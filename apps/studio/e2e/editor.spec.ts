@@ -115,9 +115,10 @@ test('template → edit camera, 4 slots and background → publish → paired ki
   expect(
     await kiosk.evaluate(() => (window as unknown as { __noReload?: number }).__noReload),
   ).toBe(1);
+  // F3: served from the agent's verified, content-addressed cache (works offline).
   await expect(
     kiosk.locator('.pb-root[data-pb-page="cover"] img[data-pb-background]'),
-  ).toHaveAttribute('src', /^blob:/);
+  ).toHaveAttribute('src', /^http:\/\/127\.0\.0\.1:47810\/assets\/[a-f0-9]{64}/);
 
   // Same layout on the kiosk's capture page (second tab of the same paired device).
   const kioskB = await context.newPage();

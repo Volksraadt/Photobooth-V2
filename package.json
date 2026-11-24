@@ -7,7 +7,7 @@
     "node": ">=22"
   },
   "scripts": {
-    "dev": "turbo run dev --filter=@pb/studio --filter=@pb/api --filter=@pb/db --filter=@pb/kiosk",
+    "dev": "turbo run dev --filter=@pb/studio --filter=@pb/api --filter=@pb/db --filter=@pb/kiosk --filter=@pb/agent",
     "build": "turbo run build",
     "test": "turbo run test",
     "test:e2e": "turbo run test:e2e",
@@ -17,7 +17,8 @@
     "format:check": "prettier --check .",
     "db:generate": "pnpm --filter @pb/db db:generate",
     "db:migrate": "pnpm --filter @pb/db db:migrate",
-    "db:seed": "pnpm --filter @pb/db db:seed"
+    "db:seed": "pnpm --filter @pb/db db:seed",
+    "dev:camera": "pnpm --filter @pb/camera dev"
   },
   "devDependencies": {
     "@eslint/js": "^9.39.0",

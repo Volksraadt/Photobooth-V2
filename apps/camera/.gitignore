@@ -1,0 +1,3 @@
+
+# Capacitor: web assets are copied in by `cap sync`
+/dist/

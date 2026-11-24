@@ -1,5 +1,11 @@
 import { sha256Hex } from '@pb/crypto';
-import { activeConfigForDevice, createPairingCode, pairingStatus, recordHeartbeat } from '@pb/db';
+import {
+  activeConfigForDevice,
+  createPairingCode,
+  pairingStatus,
+  recordDeviceOutbox,
+  recordHeartbeat,
+} from '@pb/db';
 import { Hono } from 'hono';
 import { streamSSE } from 'hono/streaming';
 import { z } from 'zod';
@@ -22,6 +28,37 @@ const HeartbeatBody = z.object({
   appVersion: z.string().max(100).nullable().optional(),
   platform: z.string().max(100).nullable().optional(),
   cameraStatus: z.enum(['ok', 'error', 'disconnected', 'unknown']).optional(),
+  printerStatus: z.enum(['ok', 'warning', 'error', 'disconnected', 'unknown']).optional(),
+});
+
+const OutboxId = z.string().regex(/^[a-z0-9]{8,64}$/);
+const IsoTime = z.iso.datetime({ offset: true }).transform((v) => new Date(v));
+
+/** Agent outbox batch (F3): device_events + print_jobs, idempotent by outbox id. */
+const OutboxBody = z.object({
+  events: z
+    .array(
+      z.object({
+        id: OutboxId,
+        level: z.enum(['info', 'warn', 'error']),
+        kind: z.string().min(1).max(64),
+        message: z.string().max(2000).nullable(),
+        data: z.unknown(),
+        occurredAt: IsoTime,
+      }),
+    )
+    .max(200),
+  printJobs: z
+    .array(
+      z.object({
+        id: OutboxId,
+        sessionCode: z.string().max(16).nullable(),
+        sheets: z.number().int().min(0).max(1000),
+        status: z.enum(['queued', 'printing', 'done', 'failed']),
+        occurredAt: IsoTime,
+      }),
+    )
+    .max(200),
 });
 
 /** Unauthenticated pairing endpoints (a kiosk has no token yet). */
@@ -111,6 +148,13 @@ export function deviceRoutes() {
     if (!body.success) return c.json({ error: 'invalid_body' }, 400);
     await recordHeartbeat(c.var.deps.db, c.var.device, body.data);
     return c.json({ ok: true, time: new Date().toISOString() });
+  });
+
+  app.post('/events', async (c) => {
+    const body = OutboxBody.safeParse(await c.req.json().catch(() => null));
+    if (!body.success) return c.json({ error: 'invalid_body', issues: body.error.issues }, 400);
+    const accepted = await recordDeviceOutbox(c.var.deps.db, c.var.device, body.data);
+    return c.json({ accepted });
   });
 
   return app;

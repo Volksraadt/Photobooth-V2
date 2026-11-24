@@ -1,0 +1,5 @@
+/target/
+/gen/schemas
+# Staged by `pnpm --dir ../agent bundle` (node runtime + agent bundle + native modules).
+/binaries/
+/resources/
