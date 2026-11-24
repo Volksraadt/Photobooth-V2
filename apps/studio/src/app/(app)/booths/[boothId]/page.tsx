@@ -59,11 +59,23 @@ export default async function BoothPage({ params }: { params: Promise<{ boothId:
             {tz} · {active ? `Versi aktif v${active.version}` : 'Belum dipublikasikan'}
           </p>
         </div>
-        <Button asChild>
-          <Link href={`/booths/${boothId}/editor`} data-testid="open-editor">
-            {canEdit ? 'Buka editor' : 'Lihat desain'}
-          </Link>
-        </Button>
+        <div className="flex flex-wrap gap-2">
+          <Button asChild variant="outline">
+            <Link href={`/booths/${boothId}/vouchers`} data-testid="open-vouchers">
+              Voucher
+            </Link>
+          </Button>
+          <Button asChild variant="outline">
+            <Link href={`/booths/${boothId}/transactions`} data-testid="open-transactions">
+              Transaksi
+            </Link>
+          </Button>
+          <Button asChild>
+            <Link href={`/booths/${boothId}/editor`} data-testid="open-editor">
+              {canEdit ? 'Buka editor' : 'Lihat desain'}
+            </Link>
+          </Button>
+        </div>
       </div>
 
       <Card>

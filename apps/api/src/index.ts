@@ -2,7 +2,8 @@ import { existsSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { serve } from '@hono/node-server';
 import { BoothConfigEvents, getDb, listenBoothConfig } from '@pb/db';
-import { createApp } from './app';
+import { secretBoxFromEnv, type SecretBox } from '@pb/crypto';
+import { createApp, createPaymentGateway } from './app';
 import { userTokenVerifierFromEnv } from './config';
 
 const rootEnv = resolve(import.meta.dirname, '../../../.env');
@@ -10,7 +11,31 @@ if (existsSync(rootEnv)) process.loadEnvFile(rootEnv);
 
 const port = Number(process.env.API_PORT ?? 8787);
 const configEvents = new BoothConfigEvents();
-const app = createApp({ db: getDb(), verifyUserToken: userTokenVerifierFromEnv(), configEvents });
+const secretBox = optionalSecretBox();
+const paymentMode = process.env.PB_PAYMENT_PROVIDER === 'mock' ? 'mock' : 'midtrans';
+if (paymentMode === 'mock' && process.env.NODE_ENV === 'production') {
+  throw new Error('PB_PAYMENT_PROVIDER=mock is not allowed in production');
+}
+const app = createApp({
+  db: getDb(),
+  verifyUserToken: userTokenVerifierFromEnv(),
+  configEvents,
+  secretBox,
+  payments: createPaymentGateway({ mode: paymentMode, secretBox }),
+  publicApiUrl: process.env.PB_PUBLIC_API_URL?.replace(/\/$/, '') || null,
+});
+console.log(
+  `[api] payments: ${paymentMode}${secretBox ? '' : ' (SECRET_MASTER_KEY missing: credentials cannot be saved)'}`,
+);
+
+function optionalSecretBox(): SecretBox | null {
+  try {
+    return secretBoxFromEnv();
+  } catch (err) {
+    if (process.env.NODE_ENV === 'production') throw err;
+    return null;
+  }
+}
 
 // Publish → pg_notify → SSE to the booth's devices. Retries until the database is up;
 // devices keep polling /device/config meanwhile.

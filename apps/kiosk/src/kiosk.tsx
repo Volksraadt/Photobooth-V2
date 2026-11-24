@@ -5,7 +5,7 @@ import {
   type CaptureSource,
   type CaptureStatus,
 } from '@pb/capture';
-import { uiActionToEvent, type FlowEvent, type FlowSnapshot } from '@pb/flow';
+import { paymentAmount, uiActionToEvent, type FlowEvent, type FlowSnapshot } from '@pb/flow';
 import { PageRenderer, type RendererAction } from '@pb/renderer';
 import type { BoothConfig } from '@pb/schema';
 import { useActorRef, useSelector } from '@xstate/react';
@@ -18,6 +18,7 @@ import { DevTools, simulateCameraUnplug } from './dev-tools';
 import { KioskErrorBoundary } from './error-boundary';
 import { createKioskMachine } from './flow-host';
 import { useKioskEnvironment } from './kiosk-environment';
+import { usePaymentBridge } from './payment-bridge';
 import { PhotoStore } from './photo-store';
 import { buildRuntime } from './runtime';
 import type { CaptureChoice, KioskSettings } from './settings';
@@ -74,6 +75,7 @@ export function Kiosk({
   const [notice, setNotice] = useState<string | null>(null);
 
   useKioskEnvironment(settings.kiosk);
+  usePaymentBridge(actor, snapshot, agent);
 
   // New published config: the flow applies it at Cover (immediately when idle, never mid-session).
   useEffect(() => {
@@ -139,6 +141,39 @@ export function Kiosk({
     }
   }, [actor]);
 
+  // Cash: the operator takes the money and approves with the booth PIN (re-checked by the agent).
+  const cashOpen = snapshot.matches({ payment: 'cash' });
+  const cashAmount = paymentAmount(snapshot.context.config, snapshot.context.session);
+  const cancelCash = useCallback(() => actor.send({ type: 'CASH.CANCEL' }), [actor]);
+  const approveCash = useCallback(
+    async (pin: string) => {
+      const { session, config: cfg } = actor.getSnapshot().context;
+      if (!session) return;
+      if (agent) {
+        try {
+          await agent.approveCash({
+            pin,
+            amount: paymentAmount(cfg, session),
+            session: {
+              id: session.id,
+              code: session.code,
+              startedAt: session.startedAt,
+              boothId: cfg.boothId,
+              configVersion: cfg.configVersion,
+            },
+          });
+        } catch (err) {
+          actor.send({ type: 'CASH.CANCEL' });
+          setNotice(`Persetujuan tunai gagal: ${err instanceof Error ? err.message : String(err)}`);
+          setTimeout(() => setNotice(null), 4000);
+          return;
+        }
+      }
+      actor.send({ type: 'PAYMENT.PAID', method: 'cash' });
+    },
+    [actor, agent],
+  );
+
   const pageType = snapshot.context.page ?? 'cover';
   // The flow owns the active config (it may swap it at Cover).
   const page = snapshot.context.config.pages[pageType];
@@ -202,6 +237,15 @@ export function Kiosk({
           agent={agent}
           onFreeSession={() => actor.send({ type: 'ADMIN.FREE_SESSION' })}
           onClose={() => actor.send({ type: 'ADMIN.CLOSE' })}
+        />
+      )}
+      {cashOpen && (
+        <PinPad
+          pinHash={snapshot.context.config.admin.pinHash}
+          title="Pembayaran tunai"
+          hint={`Petugas: terima Rp${cashAmount.toLocaleString('id-ID')}, lalu masukkan PIN.`}
+          onSuccess={(pin) => void approveCash(pin)}
+          onCancel={cancelCash}
         />
       )}
       {pinOpen && (

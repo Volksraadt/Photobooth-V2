@@ -51,6 +51,8 @@
 - Studio juga memanggil API untuk aksi sensitif (simpan kredensial, tes koneksi).
 - Sudah ada (F2): `POST /pair/start`, `POST /pair/status` (tanpa auth; Kiosk membuktikan token lewat hash), `GET /device/config` (ETag/304, 204 = belum ada publish), `GET /device/stream` (SSE `config` saat booth dipublish, dari `LISTEN pb_booth_config`), `POST /device/heartbeat`, `POST /studio/pairing/claim` (token user; owner/manager). CORS terbuka untuk `/device/*` dan `/pair/*` (auth token, tanpa cookie).
   - Ditambah F3: `POST /device/events` (outbox agent: `device_events` + `print_jobs`, idempotent per id, balasan = id yang tersimpan), `printerStatus` di `POST /device/heartbeat`. Sejak F3 pemanggil `/pair/*` dan `/device/*` adalah Local Agent, bukan Kiosk.
+  - Ditambah F4: `POST /device/payments` (id percobaan dari agent, idempotent; nominal dicek terhadap harga frame di versi config), `GET /device/payments/:id` (polling; API menanyakan provider ≤ 1×/3 dtk), `POST /device/payments/:id/cancel`, `GET /device/vouchers` (hash voucher booth), `POST /device/vouchers/redeem`; `POST /device/events` menerima `voucherUses`, `cashApprovals`, `sessions`; `/device/stream` mengirim event `payment` (`{paymentId, status}`). `POST /webhooks/midtrans/:orgId`. Studio: `GET|PUT /studio/orgs/:orgId/integrations/midtrans`, `POST …/midtrans/test` (owner/manager). Dev (`PB_PAYMENT_PROVIDER=mock`): `POST /dev/payments/:id/simulate-paid`. Respons ke device hanya `{id, status, amount, qrString, expiresAt, paidAt}`.
+  - Env API F4: `SECRET_MASTER_KEY` (wajib di production), `PB_PUBLIC_API_URL` (URL webhook per transaksi), `PB_PAYMENT_PROVIDER=mock|midtrans`.
 
 ### 2.3 Worker (`apps/worker`)
 - BullMQ + Redis. Job:
@@ -81,6 +83,7 @@
   - Nanti: kontrol DSLR (`gphoto2` / Canon EDSDK).
 - Implementasi F3 (`apps/agent`): Hono + `ws`, SQLite `node:sqlite` (lihat `docs/schema.md` C.1).
   - API Kiosk di `127.0.0.1:47810` (cek Host anti DNS-rebinding + daftar origin: Tauri dan dev server): `/status`, `/config/state`, `/config/refresh`, `/device/reset`, `/assets/:sha256`, `/sessions/:id/shots` (foto webcam), `/sessions/:id/capture` (foto tablet), `/files/:id`, `/process` (compose + cetak), `/sessions`, `/printers`, `/printer`, `/print/test`, `/camera`, `/camera/pairing`, `/settings`; WebSocket `/ws` (status kamera, versi config, status printer, progres processing, relay signaling WebRTC).
+  - F4 (API lokal): `POST /payments`, `GET /payments/:id`, `POST /payments/:id/cancel` (diteruskan ke API; offline → 503 `offline` / cancel ke outbox), `POST /vouchers/redeem` (online: API otoritatif; offline: validasi hash lokal), `POST /vouchers/sync`, `POST /cash-approvals` (PIN admin diverifikasi ulang), `GET /network`; WebSocket menambah `{type:'network', online}` dan `{type:'payment', paymentId, status}`. Kode di `apps/agent/src/money.ts`.
   - Server LAN `0.0.0.0:47811` khusus Camera App: `/camera/ping`, `/camera/pair` (kode sekali pakai → token kamera), `/camera/shots?requestId=` (Bearer token kamera, maks. 60 MB), WebSocket `/camera/ws` (pesan pertama `hello` + token). Protokol: `packages/capture/src/tablet-protocol.ts`.
   - Tablet putus: ping tiap 2 dtk, tanpa pong 5 dtk → dianggap putus (Wi-Fi mati tidak menutup TCP dengan cepat). Permintaan capture menunggu sampai 60 dtk dan dikirim ulang saat tablet tersambung lagi; upload idempotent per `requestId`; upload yang terlambat tetap disimpan.
   - Cetak: Windows = PowerShell `System.Drawing.Printing` (spooler, tanpa dialog, kertas 4×6 driver bila ada, gambar full page); macOS/Linux = `lp -o media=w288h432 -o fit-to-page`. Printer virtual (file) untuk dev/test. Job `done` = diterima spooler/CUPS.
@@ -147,8 +150,8 @@ State: `cover → tutorial → framePick → payment → capture → review → 
 1. Kiosk masuk `payment` → Agent → `POST /device/payments` (sessionId, amount).
 2. API buat payment record, panggil provider owner, simpan QR string, balas ke Kiosk.
 3. Kiosk render elemen `qris` + timer.
-4. Pembeli bayar → provider kirim webhook → API verifikasi → update status → push realtime ke device (Supabase Realtime channel per device).
-5. Cadangan: Kiosk polling `GET /device/payments/:id` tiap 3 detik.
+4. Pembeli bayar → provider kirim webhook → API verifikasi → update status → push realtime ke device (F4: event SSE `payment` di `/device/stream` → agent → WebSocket kiosk; bukan Supabase Realtime, lihat decisions F4).
+5. Cadangan: Kiosk polling agent tiap 2 detik → `GET /device/payments/:id` (API menanyakan status ke provider bila webhook belum datang).
 6. Kiosk lanjut ke `capture`.
 7. Kembali ke `framePick` atau timeout → API `cancel`.
 

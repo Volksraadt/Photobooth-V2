@@ -45,6 +45,7 @@ export class DeviceApiError extends Error {
   constructor(
     readonly status: number,
     message: string,
+    readonly code?: string,
   ) {
     super(message);
     this.name = 'DeviceApiError';
@@ -76,6 +77,39 @@ export type OutboxBatch = {
     status: string;
     occurredAt: string;
   }[];
+  voucherUses?: { id: string; [k: string]: unknown }[];
+  cashApprovals?: { id: string; [k: string]: unknown }[];
+  sessions?: { id: string; session: Record<string, unknown> }[];
+};
+
+export type SessionRefBody = { id: string; code: string; startedAt: string };
+
+/** What the API sends back about a payment (no provider data, no credentials). */
+export type DevicePayment = {
+  id: string;
+  status: 'pending' | 'paid' | 'expired' | 'canceled' | 'failed' | 'paid_late';
+  amount: number;
+  qrString: string | null;
+  expiresAt: string | null;
+  paidAt: string | null;
+};
+
+export type RemoteVoucher = {
+  codeHash: string;
+  valueType: 'full' | 'amount';
+  value: number;
+  expiresAt: string | null;
+  usedAt: string | null;
+};
+
+export type RedeemResult =
+  | { result: 'ok' }
+  | { result: 'invalid' | 'expired' | 'insufficient' }
+  | { result: 'used'; usedSessionCode: string | null };
+
+export type StreamHandlers = {
+  onConfig: () => void;
+  onPayment?: (data: { paymentId: string; status: string }) => void;
 };
 
 /** Agent ↔ apps/api (`/pair/*`, `/device/*`). Node fetch, token as Bearer. */
@@ -154,6 +188,75 @@ export class DeviceApi {
     return { status: 'ok', etag: res.headers.get('etag'), ...body };
   }
 
+  private async jsonCall<T>(
+    method: 'GET' | 'POST',
+    path: string,
+    body?: unknown,
+    timeoutMs?: number,
+  ): Promise<T> {
+    const res = await this.request(path, {
+      method,
+      body: body === undefined ? undefined : JSON.stringify(body),
+      timeoutMs,
+    });
+    const json = (await res.json().catch(() => null)) as
+      (T & { message?: string; error?: string }) | null;
+    if (!res.ok) {
+      throw new DeviceApiError(
+        res.status,
+        json?.message ?? json?.error ?? `HTTP ${res.status}`,
+        json?.error,
+      );
+    }
+    return json as T;
+  }
+
+  createPayment(body: {
+    paymentId: string;
+    session: SessionRefBody;
+    frameId: string;
+    configVersion: number;
+    amount: number;
+    expirySec: number;
+  }) {
+    return this.jsonCall<DevicePayment>('POST', '/device/payments', body, 20_000);
+  }
+
+  getPayment(id: string) {
+    return this.jsonCall<DevicePayment>(
+      'GET',
+      `/device/payments/${encodeURIComponent(id)}`,
+      undefined,
+      8_000,
+    );
+  }
+
+  cancelPayment(id: string) {
+    return this.jsonCall<DevicePayment>(
+      'POST',
+      `/device/payments/${encodeURIComponent(id)}/cancel`,
+      {},
+      10_000,
+    );
+  }
+
+  async vouchers(): Promise<RemoteVoucher[]> {
+    return (await this.jsonCall<{ vouchers: RemoteVoucher[] }>('GET', '/device/vouchers')).vouchers;
+  }
+
+  redeemVoucher(
+    body: {
+      codeHash: string;
+      session: SessionRefBody;
+      amount: number;
+      usedAt: string;
+      offline: boolean;
+    },
+    timeoutMs = 4_000,
+  ) {
+    return this.jsonCall<RedeemResult>('POST', '/device/vouchers/redeem', body, timeoutMs);
+  }
+
   async heartbeat(body: HeartbeatBody): Promise<void> {
     const res = await this.request('/device/heartbeat', {
       method: 'POST',
@@ -174,7 +277,8 @@ export class DeviceApi {
   }
 
   /** Server-sent events: calls `onConfig` on every `config` event. Resolves when the stream ends. */
-  async stream(onConfig: () => void, signal: AbortSignal): Promise<void> {
+  async stream(handlers: StreamHandlers | (() => void), signal: AbortSignal): Promise<void> {
+    const h: StreamHandlers = typeof handlers === 'function' ? { onConfig: handlers } : handlers;
     const res = await this.request('/device/stream', {
       signal,
       timeoutMs: 0,
@@ -190,7 +294,15 @@ export class DeviceApi {
       while ((idx = buffer.indexOf('\n\n')) !== -1) {
         const block = buffer.slice(0, idx);
         buffer = buffer.slice(idx + 2);
-        if (/^event: config$/m.test(block)) onConfig();
+        if (/^event: config$/m.test(block)) h.onConfig();
+        else if (/^event: payment$/m.test(block) && h.onPayment) {
+          const data = /^data: (.*)$/m.exec(block)?.[1];
+          try {
+            if (data) h.onPayment(JSON.parse(data) as { paymentId: string; status: string });
+          } catch {
+            // malformed event: polling covers it
+          }
+        }
       }
     }
   }

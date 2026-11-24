@@ -1,15 +1,19 @@
 import type { CaptureSource, CapturedImage } from '@pb/capture';
 import {
   flowMachine,
+  PaymentOfflineError,
   sessionTotal,
   type CaptureShotInput,
   type CreatePaymentInput,
+  type CreatePaymentOutput,
   type FlowEvent,
+  type RedeemVoucherInput,
+  type RedeemVoucherOutput,
   type ProcessSessionInput,
   type ShotPhoto,
 } from '@pb/flow';
 import { fromCallback, fromPromise } from 'xstate';
-import type { AgentClient } from './agent/agent-client';
+import { AgentError, type AgentClient } from './agent/agent-client';
 import { mockPayments } from './mock-payment';
 import type { PhotoStore } from './photo-store';
 import { saveSession, type StoredSession } from './session-store';
@@ -155,6 +159,52 @@ async function processWithAgent(
   }
 }
 
+/** QRIS through the agent → API → owner's Midtrans. 503 offline = stay on Payment without QR. */
+async function createAgentPayment(
+  agent: AgentClient,
+  input: CreatePaymentInput,
+): Promise<CreatePaymentOutput> {
+  try {
+    const p = await agent.createPayment({
+      session: {
+        id: input.sessionId,
+        code: input.sessionCode,
+        startedAt: input.startedAt,
+        boothId: input.boothId,
+        configVersion: input.configVersion,
+      },
+      frameId: input.frameId,
+      amount: input.amount,
+      expirySec: input.expirySec,
+    });
+    if (!p.qrString || !p.expiresAt) throw new Error('QRIS tidak tersedia.');
+    return { paymentId: p.id, qrString: p.qrString, expiresAt: p.expiresAt };
+  } catch (err) {
+    if (err instanceof AgentError && (err.code === 'offline' || err.status === 0)) {
+      throw new PaymentOfflineError();
+    }
+    throw err;
+  }
+}
+
+async function redeemWithAgent(
+  agent: AgentClient,
+  input: RedeemVoucherInput,
+): Promise<RedeemVoucherOutput> {
+  const r = await agent.redeemVoucher({
+    code: input.code,
+    session: {
+      id: input.sessionId,
+      code: input.sessionCode,
+      startedAt: input.startedAt,
+      boothId: input.boothId,
+      configVersion: input.configVersion,
+    },
+    amount: input.amount,
+  });
+  return r.result === 'ok' ? { ok: true, offline: r.offline } : { ok: false, reason: r.result };
+}
+
 /** The shared flow machine wired to kiosk implementations (camera, mock payment, agent). */
 export function createKioskMachine(deps: KioskFlowDeps) {
   const { camera, photos, agent } = deps;
@@ -178,7 +228,11 @@ export function createKioskMachine(deps: KioskFlowDeps) {
         return storeShot(deps, input, image);
       }),
       createPayment: fromPromise(({ input }: { input: CreatePaymentInput }) =>
-        mockPayments.create(input),
+        agent ? createAgentPayment(agent, input) : mockPayments.create(input),
+      ),
+      // Without an agent (browser-only dev) there is no voucher list: every code is invalid.
+      redeemVoucher: fromPromise<RedeemVoucherOutput, RedeemVoucherInput>(async ({ input }) =>
+        agent ? redeemWithAgent(agent, input) : { ok: false, reason: 'invalid' },
       ),
       processSession: fromCallback<FlowEvent, ProcessSessionInput>(({ input, sendBack }) => {
         let cancelled = false;
@@ -201,7 +255,16 @@ export function createKioskMachine(deps: KioskFlowDeps) {
       }),
     },
     actions: {
-      cancelPayment: ({ context }) => mockPayments.cancel(context.session?.paymentId),
+      cancelPayment: ({ context }) => {
+        const id = context.session?.paymentId;
+        if (!id) return;
+        if (agent) {
+          // The agent queues the cancel in its outbox when the API is unreachable.
+          void agent.cancelPayment(id).catch((err: unknown) => {
+            console.warn('[kiosk] cancel payment failed', err);
+          });
+        } else mockPayments.cancel(id);
+      },
       onSessionEnd: ({ context }) => {
         if (context.session) photos.release(context.session.id);
       },

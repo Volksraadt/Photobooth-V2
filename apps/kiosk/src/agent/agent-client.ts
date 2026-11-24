@@ -31,6 +31,8 @@ export type AgentStatus = {
   camera: TabletCameraState;
   printer: PrinterStatusSummary;
   outboxPending: number;
+  outboxByKind?: Record<string, number>;
+  vouchers?: number;
   printedSheets: number;
   settings: { cameraSource: 'webcam' | 'tablet' };
   lanPort: number;
@@ -108,10 +110,28 @@ export type ProcessResponse = {
   timings: { composeMs: number; printMs: number; totalMs: number };
 };
 
+export type AgentSessionRef = {
+  id: string;
+  code: string;
+  startedAt: string;
+  boothId: string;
+  configVersion: number;
+};
+
+export type AgentPayment = {
+  id: string;
+  status: 'pending' | 'paid' | 'expired' | 'canceled' | 'failed' | 'paid_late';
+  amount: number;
+  qrString: string | null;
+  expiresAt: string | null;
+  paidAt: string | null;
+};
+
 export class AgentError extends Error {
   constructor(
     readonly status: number,
     message: string,
+    readonly code?: string,
   ) {
     super(message);
     this.name = 'AgentError';
@@ -225,6 +245,7 @@ export class AgentClient implements AgentLink {
       throw new AgentError(
         res.status,
         body?.message ?? body?.error ?? `Agent menolak permintaan (HTTP ${res.status})`,
+        body?.error,
       );
     }
     return body as T;
@@ -314,6 +335,31 @@ export class AgentClient implements AgentLink {
       'POST',
       '/camera/pairing',
     );
+  // --- payments (F4) ---
+
+  createPayment = (body: {
+    session: AgentSessionRef;
+    frameId: string;
+    amount: number;
+    expirySec: number;
+  }) => this.json<AgentPayment>('POST', '/payments', body);
+  getPayment = (id: string) =>
+    this.request<AgentPayment | { id: string; status: 'unknown' }>(
+      `/payments/${encodeURIComponent(id)}`,
+    );
+  cancelPayment = (id: string) =>
+    this.json<{ status: string }>('POST', `/payments/${encodeURIComponent(id)}/cancel`, {});
+  redeemVoucher = (body: { code: string; session: AgentSessionRef; amount: number }) =>
+    this.json<{ result: 'ok' | 'invalid' | 'used' | 'expired' | 'insufficient'; offline: boolean }>(
+      'POST',
+      '/vouchers/redeem',
+      body,
+    );
+  approveCash = (body: { pin: string; session: AgentSessionRef; amount: number }) =>
+    this.json<{ id: string; offline: boolean }>('POST', '/cash-approvals', body);
+  syncVouchers = () => this.json<{ ok: true }>('POST', '/vouchers/sync', {});
+  network = () => this.request<{ online: boolean | null }>('/network');
+
   forgetCamera = (id: string) =>
     this.json<{ ok: true }>('DELETE', `/camera/pairings/${encodeURIComponent(id)}`);
 }

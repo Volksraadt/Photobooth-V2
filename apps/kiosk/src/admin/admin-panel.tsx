@@ -159,9 +159,26 @@ function AgentSection({ agent }: { agent: AgentClient }) {
           antrian kirim {status.outboxPending} · lembar tercetak {status.printedSheets}
         </p>
       )}
+      {status && (
+        <p className="sys-muted" data-testid="agent-payments">
+          Voucher tersinkron: {status.vouchers ?? 0} · belum terkirim: sesi{' '}
+          {status.outboxByKind?.session ?? 0}, voucher {status.outboxByKind?.voucher_use ?? 0},
+          tunai {status.outboxByKind?.cash_approval ?? 0}
+          {status.online === false && ' · offline: QRIS disembunyikan, voucher & tunai tetap bisa'}
+        </p>
+      )}
       <div className="sys-row">
         <button type="button" className="sys-btn" onClick={() => void sync()} disabled={syncing}>
           {syncing ? 'Menyinkron…' : 'Sinkron config'}
+        </button>
+        <button
+          type="button"
+          className="sys-btn"
+          onClick={() =>
+            void agent.syncVouchers().then(load, (e: unknown) => setError(errorText(e)))
+          }
+        >
+          Sinkron voucher
         </button>
         {confirmReset ? (
           <>

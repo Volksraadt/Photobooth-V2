@@ -24,11 +24,11 @@
     "hono": "^4.13.20",
     "sharp": "^0.35.5",
     "ws": "^8.23.0",
-    "zod": "^4.6.7"
+    "zod": "^4.6.7",
+    "@pb/crypto": "workspace:*"
   },
   "devDependencies": {
     "@pb/api": "workspace:*",
-    "@pb/crypto": "workspace:*",
     "@pb/db": "workspace:*",
     "@types/ws": "^8.18.2",
     "drizzle-orm": "^0.45.4",

@@ -1,16 +1,24 @@
 import {
   booths,
   claimPairingCode,
+  getCredential,
+  listCredentials,
   listMyOrgs,
   PairingError,
+  PaymentRepoError,
   PlanLimitError,
+  recordCredentialTest,
+  saveCredential,
   withUserContext,
+  type CredentialRow,
 } from '@pb/db';
 import { eq } from 'drizzle-orm';
-import { Hono } from 'hono';
+import { Hono, type Context } from 'hono';
 import { z } from 'zod';
 import { userAuth } from '../middleware/user-auth';
+import { encryptCredential } from '../payments/gateway';
 import type { AppEnv } from '../types';
+import { webhookUrl } from './payment-routes';
 
 const ClaimBody = z.object({
   code: z.string().regex(/^\d{6}$/),
@@ -78,5 +86,110 @@ export function studioRoutes() {
     }
   });
 
+  // --- Midtrans integration (credentials are write-only from Studio's point of view) ---
+
+  const requireOrgEditor = async (c: Context<AppEnv>, orgId: string) => {
+    const org = await withUserContext(c.var.deps.db, c.var.user.userId, async (tx) =>
+      (await listMyOrgs(tx)).find((o) => o.id === orgId),
+    );
+    if (!org) return c.json({ error: 'not_found', message: 'Organisasi tidak ditemukan.' }, 404);
+    if (org.role === 'operator') {
+      return c.json(
+        { error: 'forbidden', message: 'Hanya owner/manager yang dapat mengatur integrasi.' },
+        403,
+      );
+    }
+    return null;
+  };
+
+  const credentialView = (r: CredentialRow) => ({
+    env: r.env,
+    merchantId: r.merchantId,
+    clientKey: r.clientKey,
+    isActive: r.isActive,
+    status: r.status,
+    lastTestedAt: r.lastTestedAt?.toISOString() ?? null,
+    lastTestMessage: r.lastTestMessage,
+    hasServerKey: true,
+  });
+
+  app.get('/orgs/:orgId/integrations/midtrans', async (c) => {
+    const orgId = c.req.param('orgId');
+    const denied = await requireOrgEditor(c, orgId);
+    if (denied) return denied;
+    const rows = await listCredentials(c.var.deps.db, orgId);
+    return c.json({
+      mode: c.var.deps.payments.mode,
+      encryptionReady: !!c.var.deps.secretBox,
+      webhookUrl: webhookUrl(c.var.deps, orgId),
+      credentials: rows.filter((r) => r.provider === 'midtrans').map(credentialView),
+    });
+  });
+
+  app.put('/orgs/:orgId/integrations/midtrans', async (c) => {
+    const orgId = c.req.param('orgId');
+    const denied = await requireOrgEditor(c, orgId);
+    if (denied) return denied;
+    const body = MidtransBody.safeParse(await c.req.json().catch(() => null));
+    if (!body.success) return c.json({ error: 'invalid_body', message: 'Data tidak valid.' }, 400);
+    const box = c.var.deps.secretBox;
+    if (!box) {
+      return c.json(
+        {
+          error: 'encryption_unavailable',
+          message: 'SECRET_MASTER_KEY belum diatur di server API.',
+        },
+        503,
+      );
+    }
+    const { env, serverKey, clientKey, merchantId, active } = body.data;
+    try {
+      const saved = await saveCredential(c.var.deps.db, {
+        orgId,
+        env,
+        encryptedSecret: serverKey ? encryptCredential(box, orgId, env, serverKey) : null,
+        clientKey: clientKey || null,
+        merchantId: merchantId || null,
+        active,
+        userId: c.var.user.userId,
+      });
+      return c.json({ credential: credentialView(saved) });
+    } catch (err) {
+      if (err instanceof PaymentRepoError)
+        return c.json({ error: err.code, message: err.message }, 400);
+      throw err;
+    }
+  });
+
+  app.post('/orgs/:orgId/integrations/midtrans/test', async (c) => {
+    const orgId = c.req.param('orgId');
+    const denied = await requireOrgEditor(c, orgId);
+    if (denied) return denied;
+    const body = z
+      .object({ env: z.enum(['sandbox', 'production']) })
+      .safeParse(await c.req.json().catch(() => null));
+    if (!body.success) return c.json({ error: 'invalid_body', message: 'Data tidak valid.' }, 400);
+    const cred = await getCredential(c.var.deps.db, orgId, body.data.env);
+    if (!cred) return c.json({ error: 'not_found', message: 'Kredensial belum disimpan.' }, 404);
+    const result = await c.var.deps.payments.forCredential(cred).testConnection();
+    await recordCredentialTest(c.var.deps.db, {
+      orgId,
+      env: body.data.env,
+      ok: result.ok,
+      message: result.message,
+      userId: c.var.user.userId,
+    });
+    return c.json(result);
+  });
+
   return app;
 }
+
+const MidtransBody = z.object({
+  env: z.enum(['sandbox', 'production']),
+  /** Empty = keep the stored key. */
+  serverKey: z.string().trim().max(200).optional(),
+  clientKey: z.string().trim().max(200).optional(),
+  merchantId: z.string().trim().max(100).optional(),
+  active: z.boolean(),
+});

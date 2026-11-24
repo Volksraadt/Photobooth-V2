@@ -7,7 +7,7 @@ import { Pending } from '../placeholder';
 import { QrCode } from '../qr-code';
 import { boxStyleToCss, pickTextStyle, textStyleToCss } from '../styles';
 import { formatMmSs, formatPrice } from '../tokens';
-import type { RendererAction } from '../types';
+import type { RendererAction, VoucherRuntimeStatus } from '../types';
 
 const fill = { position: 'absolute', inset: 0 } as const;
 const SAMPLE_QRIS = 'QRIS-PREVIEW-0000000000';
@@ -26,6 +26,7 @@ function useNow(active: boolean, intervalMs = 250): number {
 export function QrisElementView({ el }: { el: ElementOf<'qris'> }) {
   const { mode, runtime } = useRenderer();
   const value = mode === 'editor' ? SAMPLE_QRIS : (runtime.qrisString ?? null);
+  if (mode === 'live' && runtime.qrisHidden) return null;
   const logoHeight = el.showLogo ? Math.max(24, Math.min(el.width, el.height) * 0.1) : 0;
   return (
     <div
@@ -88,7 +89,7 @@ export function PaymentTimerElementView({ el }: { el: ElementOf<'payment-timer'>
   const total = runtime.paymentTotalSec ?? config.flow.qrisExpirySec;
   const expiresAt = mode === 'live' ? (runtime.paymentExpiresAt ?? null) : null;
   const now = useNow(expiresAt !== null);
-  if (mode === 'live' && expiresAt === null) return null;
+  if (mode === 'live' && (expiresAt === null || runtime.qrisHidden)) return null;
   // Clamped: the first frame may be measured slightly before the QRIS was issued.
   const remaining =
     expiresAt === null ? total : Math.min(total, Math.max(0, (expiresAt - now) / 1000));
@@ -129,34 +130,154 @@ export function PaymentTimerElementView({ el }: { el: ElementOf<'payment-timer'>
 }
 
 const VOUCHER_PLACEHOLDER = { id: 'Kode voucher', en: 'Voucher code' } as const;
-const KEYS = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '⌫', '0', '✓'];
+/** Short system feedback inside the element (like the placeholder); the owner styles the element. */
+const VOUCHER_MESSAGES: Record<
+  Exclude<VoucherRuntimeStatus, 'idle'>,
+  { id: string; en: string }
+> = {
+  checking: { id: 'Memeriksa…', en: 'Checking…' },
+  invalid: { id: 'Voucher tidak valid', en: 'Invalid voucher' },
+  used: { id: 'Voucher sudah dipakai', en: 'Voucher already used' },
+  expired: { id: 'Voucher kedaluwarsa', en: 'Voucher expired' },
+  insufficient: { id: 'Nilai voucher kurang', en: 'Voucher value too low' },
+  error: { id: 'Coba lagi', en: 'Try again' },
+};
+const ERROR_COLOR = '#ef4444';
+type VoucherKey = { label: string; action: RendererAction };
+const KEYS: VoucherKey[] = [
+  ...['1', '2', '3', '4', '5', '6', '7', '8', '9'].map((k) => ({
+    label: k,
+    action: { kind: 'voucherKey', key: k } as const,
+  })),
+  { label: '⌫', action: { kind: 'voucherBackspace' } },
+  { label: '0', action: { kind: 'voucherKey', key: '0' } },
+  { label: '✓', action: { kind: 'voucherSubmit' } },
+];
 
-/** Visual only in F1; voucher entry and validation arrive in F4. */
+const byLabel = (l: string) => KEYS.find((k) => k.label === l)!;
+const COMPACT_KEYS: VoucherKey[] = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '0', '⌫', '✓'].map(
+  byLabel,
+);
+
+/** 123412341234 → 1234-1234-1234 (as printed on the voucher). */
+const groupCode = (code: string) => code.replace(/(\d{4})(?=\d)/g, '$1-');
+
+/**
+ * Voucher entry (F4). Keypad: on-screen digits; both variants also accept a physical keyboard or
+ * barcode scanner (digits, Backspace, Enter) while shown in live mode.
+ */
 export function VoucherInputElementView({ el }: { el: ElementOf<'voucher-input'> }) {
-  const { runtime, config } = useRenderer();
+  const { runtime, config, mode, onAction } = useRenderer();
+  const live = mode === 'live';
   const text = textStyleToCss(el.textStyle);
+
+  useEffect(() => {
+    if (!live) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (/^\d$/.test(e.key)) onAction({ kind: 'voucherKey', key: e.key });
+      else if (e.key === 'Backspace') onAction({ kind: 'voucherBackspace' });
+      else if (e.key === 'Enter') onAction({ kind: 'voucherSubmit' });
+      else return;
+      e.preventDefault();
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [live, onAction]);
+
+  const code = runtime.voucherCode ?? '';
+  const status = runtime.voucherStatus ?? 'idle';
+  const isError = status !== 'idle' && status !== 'checking';
+  const display = code ? (
+    <span data-pb-voucher-code={code}>{groupCode(code)}</span>
+  ) : status !== 'idle' ? (
+    <span
+      data-pb-voucher-status={status}
+      style={isError ? { color: ERROR_COLOR } : { opacity: 0.6 }}
+    >
+      {VOUCHER_MESSAGES[status][config.locale]}
+    </span>
+  ) : (
+    <span style={{ opacity: 0.45 }}>{VOUCHER_PLACEHOLDER[config.locale]}</span>
+  );
+  const fieldStyle = {
+    display: 'flex',
+    alignItems: 'center',
+    padding: '0 0.6em',
+    background: '#ffffff',
+    borderRadius: 16,
+    whiteSpace: 'nowrap',
+    overflow: 'hidden',
+    ...boxStyleToCss(el.keyStyle),
+    ...text,
+    ...(isError ? { boxShadow: `inset 0 0 0 3px ${ERROR_COLOR}` } : {}),
+  } as const;
+
+  const keyView = (k: VoucherKey) => (
+    <div
+      key={k.label}
+      role={live ? 'button' : undefined}
+      data-pb-voucher-key={k.label}
+      onPointerDown={
+        live
+          ? (e) => {
+              e.preventDefault();
+              onAction(k.action);
+            }
+          : undefined
+      }
+      style={{
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        background: '#ffffff',
+        borderRadius: 12,
+        cursor: live ? 'pointer' : undefined,
+        userSelect: 'none',
+        touchAction: 'manipulation',
+        ...boxStyleToCss(el.keyStyle),
+        ...text,
+      }}
+    >
+      {k.label}
+    </div>
+  );
+
   if (el.variant === 'field') {
+    const fieldHeight = Math.min(el.height, el.textStyle.fontSize * 2.4);
+    // Touch screens need keys: the space left in the element box holds a 6×2 keypad
+    // (same in the editor and on the kiosk). A field-only box = keyboard / barcode scanner.
+    const keypadHeight = el.height - fieldHeight - 8;
+    const compact = keypadHeight >= fieldHeight * 1.2;
     return (
-      <div
-        data-pb-voucher
-        style={{
-          ...fill,
-          display: 'flex',
-          alignItems: 'center',
-          padding: '0 0.6em',
-          background: '#ffffff',
-          borderRadius: 16,
-          ...boxStyleToCss(el.keyStyle),
-          ...boxStyleToCss(el.style),
-          ...text,
-          height: Math.min(el.height, el.textStyle.fontSize * 2.4),
-          bottom: 'auto',
-        }}
-      >
-        {runtime.voucherCode ? (
-          <span>{runtime.voucherCode}</span>
-        ) : (
-          <span style={{ opacity: 0.45 }}>{VOUCHER_PLACEHOLDER[config.locale]}</span>
+      <div data-pb-voucher data-status={status} style={{ ...fill, ...boxStyleToCss(el.style) }}>
+        <div
+          style={{
+            ...fieldStyle,
+            position: 'absolute',
+            left: 0,
+            right: 0,
+            top: 0,
+            height: fieldHeight,
+          }}
+        >
+          {display}
+        </div>
+        {compact && (
+          <div
+            style={{
+              position: 'absolute',
+              left: 0,
+              right: 0,
+              bottom: 0,
+              height: keypadHeight,
+              display: 'grid',
+              gridTemplateColumns: 'repeat(6, 1fr)',
+              gridTemplateRows: 'repeat(2, 1fr)',
+              gap: 8,
+            }}
+          >
+            {COMPACT_KEYS.map(keyView)}
+          </div>
         )}
       </div>
     );
@@ -164,31 +285,18 @@ export function VoucherInputElementView({ el }: { el: ElementOf<'voucher-input'>
   return (
     <div
       data-pb-voucher
+      data-status={status}
       style={{
         ...fill,
         display: 'grid',
         gridTemplateColumns: 'repeat(3, 1fr)',
-        gridTemplateRows: 'repeat(4, 1fr)',
+        gridTemplateRows: 'repeat(5, 1fr)',
         gap: 8,
         ...boxStyleToCss(el.style),
       }}
     >
-      {KEYS.map((k) => (
-        <div
-          key={k}
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            background: '#ffffff',
-            borderRadius: 12,
-            ...boxStyleToCss(el.keyStyle),
-            ...text,
-          }}
-        >
-          {k}
-        </div>
-      ))}
+      <div style={{ ...fieldStyle, gridColumn: '1 / -1', justifyContent: 'center' }}>{display}</div>
+      {KEYS.map(keyView)}
     </div>
   );
 }

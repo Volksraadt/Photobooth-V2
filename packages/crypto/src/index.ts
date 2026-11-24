@@ -8,6 +8,7 @@ import {
 } from 'node:crypto';
 
 export * from './user-token';
+export * from './voucher';
 
 const ALGO = 'aes-256-gcm';
 const IV_BYTES = 12;

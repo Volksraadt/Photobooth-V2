@@ -27,10 +27,15 @@ export function PinPad({
   pinHash,
   onSuccess,
   onCancel,
+  title = 'PIN admin',
+  hint = 'Masukkan PIN 4–8 digit.',
 }: {
   pinHash: string;
-  onSuccess: () => void;
+  /** Receives the verified PIN (cash approval re-checks it in the agent). */
+  onSuccess: (pin: string) => void;
   onCancel: () => void;
+  title?: string;
+  hint?: string;
 }) {
   const [pin, setPin] = useState('');
   const [busy, setBusy] = useState(false);
@@ -71,7 +76,7 @@ export function PinPad({
     setBusy(false);
     if (ok) {
       resetFailures();
-      onSuccess();
+      onSuccess(value);
       return;
     }
     const remaining = recordFailure();
@@ -91,16 +96,14 @@ export function PinPad({
   return (
     <div className="sys" data-testid="pin-pad">
       <div className="sys-card" style={{ width: 'min(92vw, 420px)', textAlign: 'center' }}>
-        <h1>PIN admin</h1>
+        <h1>{title}</h1>
         {locked ? (
           <p className="sys-error">
             Terlalu banyak percobaan. Coba lagi dalam {Math.ceil((guard.lockedUntil - now) / 1000)}{' '}
             detik.
           </p>
         ) : (
-          <p className={message ? 'sys-error' : 'sys-muted'}>
-            {message ?? 'Masukkan PIN 4–8 digit.'}
-          </p>
+          <p className={message ? 'sys-error' : 'sys-muted'}>{message ?? hint}</p>
         )}
         <div className="sys-dots" aria-label={`${pin.length} digit`}>
           {Array.from({ length: Math.max(4, pin.length) }, (_, i) => (

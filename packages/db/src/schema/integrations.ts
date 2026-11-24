@@ -1,9 +1,19 @@
-import { index, integer, numeric, pgEnum, pgTable, text, uniqueIndex } from 'drizzle-orm/pg-core';
+import { sql } from 'drizzle-orm';
+import {
+  boolean,
+  index,
+  integer,
+  numeric,
+  pgEnum,
+  pgTable,
+  text,
+  uniqueIndex,
+} from 'drizzle-orm/pg-core';
 import { id, timestamps, tz } from './_common';
 import { orgs } from './orgs';
-import { paymentMethod, paymentProvider } from './sessions';
+import { paymentMethod, paymentProvider, providerEnv } from './sessions';
 
-export const providerEnv = pgEnum('provider_env', ['sandbox', 'production']);
+export { providerEnv };
 export const connectionStatus = pgEnum('connection_status', [
   'untested',
   'ok',
@@ -24,11 +34,22 @@ export const paymentCredentials = pgTable(
     /** @pb/crypto SecretBox payload, AAD = `org:<orgId>:payment:<provider>:<env>`. */
     encryptedSecret: text('encrypted_secret').notNull(),
     merchantId: text('merchant_id'),
+    /** Public client key (not a secret; kept for Snap/F7). */
+    clientKey: text('client_key'),
+    /** The env used for new QRIS charges (one active row per org+provider). */
+    isActive: boolean('is_active').notNull().default(false),
     status: connectionStatus('status').notNull().default('untested'),
     lastTestedAt: tz('last_tested_at'),
+    /** Last connection test message (never contains the key). */
+    lastTestMessage: text('last_test_message'),
     ...timestamps,
   },
-  (t) => [uniqueIndex('payment_credentials_org_provider_env_uq').on(t.orgId, t.provider, t.env)],
+  (t) => [
+    uniqueIndex('payment_credentials_org_provider_env_uq').on(t.orgId, t.provider, t.env),
+    uniqueIndex('payment_credentials_one_active_uq')
+      .on(t.orgId, t.provider)
+      .where(sql`${t.isActive}`),
+  ],
 );
 
 /** API/worker only (no RLS policy for Studio users). */

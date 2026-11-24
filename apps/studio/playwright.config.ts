@@ -5,6 +5,8 @@ export default defineConfig({
   testDir: './e2e',
   timeout: 60_000,
   fullyParallel: false,
+  // One local agent per machine: specs that pair it must not run in parallel.
+  workers: 1,
   retries: process.env.CI ? 1 : 0,
   use: { baseURL: 'http://localhost:3000', trace: 'retain-on-failure' },
   projects: [{ name: 'chromium', use: { ...devices['Desktop Chrome'] } }],

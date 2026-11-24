@@ -217,6 +217,9 @@ importers:
       '@pb/compositor':
         specifier: workspace:*
         version: link:../../packages/compositor
+      '@pb/crypto':
+        specifier: workspace:*
+        version: link:../../packages/crypto
       '@pb/schema':
         specifier: workspace:*
         version: link:../../packages/schema
@@ -236,9 +239,6 @@ importers:
       '@pb/api':
         specifier: workspace:*
         version: link:../api
-      '@pb/crypto':
-        specifier: workspace:*
-        version: link:../../packages/crypto
       '@pb/db':
         specifier: workspace:*
         version: link:../../packages/db
@@ -266,6 +266,9 @@ importers:
       '@pb/db':
         specifier: workspace:*
         version: link:../../packages/db
+      '@pb/payments':
+        specifier: workspace:*
+        version: link:../../packages/payments
       '@pb/schema':
         specifier: workspace:*
         version: link:../../packages/schema
@@ -278,6 +281,10 @@ importers:
       zod:
         specifier: ^4.6.7
         version: 4.6.7
+    devDependencies:
+      '@paralleldrive/cuid2':
+        specifier: ^3.3.0
+        version: 3.3.0
 
   apps/camera:
     dependencies:
@@ -540,7 +547,14 @@ importers:
         specifier: ^5.33.4
         version: 5.33.4
 
-  packages/payments: {}
+  packages/payments:
+    dependencies:
+      jsqr:
+        specifier: ^1.4.0
+        version: 1.4.0
+      sharp:
+        specifier: ^0.35.5
+        version: 0.35.5(@types/node@24.19.2)
 
   packages/renderer:
     dependencies:

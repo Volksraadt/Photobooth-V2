@@ -36,6 +36,8 @@ export class ConfigSync {
   private loopsStarted = false;
   private abort = new AbortController();
   private timers = new Set<ReturnType<typeof setTimeout>>();
+  /** `payment` events on the device stream (F4): payment status changed in the API. */
+  onPaymentSignal: ((d: { paymentId: string; status: string }) => void) | null = null;
 
   constructor(
     private readonly store: AgentStore,
@@ -121,7 +123,13 @@ export class ConfigSync {
   private async streamLoop(attempt: number): Promise<void> {
     if (this.stopped || !this.api.hasToken) return;
     try {
-      await this.api.stream(() => void this.refresh(), this.abort.signal);
+      await this.api.stream(
+        {
+          onConfig: () => void this.refresh(),
+          onPayment: (d) => this.onPaymentSignal?.(d),
+        },
+        this.abort.signal,
+      );
       attempt = 1;
     } catch (err) {
       if (this.stopped) return;

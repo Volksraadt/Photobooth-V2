@@ -1,6 +1,6 @@
 import type { DeviceApi, HeartbeatBody, OutboxBatch } from './device-api';
 import { DeviceApiError } from './device-api';
-import type { AgentStore } from './store';
+import type { AgentStore, OutboxRow } from './store';
 
 /**
  * Heartbeat (every 30 s) + outbox delivery. Online/offline is derived from the heartbeat;
@@ -13,6 +13,10 @@ export class Telemetry {
   private timers: ReturnType<typeof setInterval>[] = [];
   private flushing: Promise<void> | null = null;
   private readonly listeners = new Set<(online: boolean) => void>();
+  private retry: ReturnType<typeof setTimeout> | null = null;
+  private stopped = false;
+  /** While offline, the connection is re-checked this often (F4: QRIS returns quickly). */
+  offlineRetryMs = 5_000;
 
   constructor(
     private readonly store: AgentStore,
@@ -28,7 +32,31 @@ export class Telemetry {
   }
 
   stop() {
+    this.stopped = true;
     for (const t of this.timers) clearInterval(t);
+    if (this.retry) clearTimeout(this.retry);
+  }
+
+  /**
+   * Result of any API call (payments, vouchers): a response = online; a network failure or
+   * timeout = offline. HTTP errors still prove the API is reachable.
+   */
+  report(err: unknown | null) {
+    if (err === null || err instanceof DeviceApiError) {
+      this.setOnline(true);
+    } else {
+      this.setOnline(false);
+      this.scheduleRetry();
+    }
+  }
+
+  private scheduleRetry() {
+    if (this.retry || this.stopped) return;
+    this.retry = setTimeout(() => {
+      this.retry = null;
+      void this.beat();
+    }, this.offlineRetryMs);
+    this.retry.unref?.();
   }
 
   get isOnline(): boolean | null {
@@ -53,6 +81,8 @@ export class Telemetry {
           message: 'API tidak dapat dihubungi',
         });
     } else if (prev === false && this.offlineSince !== null) {
+      // Back online: deliver everything queued while offline now, not after its backoff.
+      this.store.resetOutboxBackoff();
       const sec = Math.round((Date.now() - this.offlineSince) / 1000);
       this.store.event({
         level: 'info',
@@ -73,7 +103,10 @@ export class Telemetry {
       void this.flush();
     } catch (err) {
       // 401 = revoked: ConfigSync handles re-pairing; not an "offline" state.
-      if (!(err instanceof DeviceApiError && err.status === 401)) this.setOnline(false);
+      if (!(err instanceof DeviceApiError && err.status === 401)) {
+        this.setOnline(err instanceof DeviceApiError);
+        if (!(err instanceof DeviceApiError)) this.scheduleRetry();
+      }
     }
   }
 
@@ -91,35 +124,83 @@ export class Telemetry {
     for (;;) {
       const rows = this.store.dueOutbox(100);
       if (rows.length === 0) return;
-      const batch: OutboxBatch = { events: [], printJobs: [] };
+      const batch: Required<OutboxBatch> = {
+        events: [],
+        printJobs: [],
+        voucherUses: [],
+        cashApprovals: [],
+        sessions: [],
+      };
+      const cancels: string[] = [];
       for (const row of rows) {
         const payload = JSON.parse(row.payload) as Record<string, unknown>;
-        if (row.kind === 'device_event') {
-          batch.events.push({
-            id: row.id,
-            ...(payload as Omit<OutboxBatch['events'][number], 'id'>),
-          });
-        } else {
-          batch.printJobs.push({
-            id: row.id,
-            ...(payload as Omit<OutboxBatch['printJobs'][number], 'id'>),
-          });
+        switch (row.kind) {
+          case 'device_event':
+            batch.events.push({
+              id: row.id,
+              ...(payload as Omit<OutboxBatch['events'][number], 'id'>),
+            });
+            break;
+          case 'print_job':
+            batch.printJobs.push({
+              id: row.id,
+              ...(payload as Omit<OutboxBatch['printJobs'][number], 'id'>),
+            });
+            break;
+          case 'voucher_use':
+            batch.voucherUses.push({ id: row.id, ...payload });
+            break;
+          case 'cash_approval':
+            batch.cashApprovals.push({ id: row.id, ...payload });
+            break;
+          case 'session':
+            batch.sessions.push({ id: row.id, session: payload });
+            break;
+          case 'payment_cancel':
+            cancels.push(row.id);
+            break;
         }
+      }
+      await this.flushCancels(rows.filter((r) => cancels.includes(r.id)));
+      if (cancels.length === rows.length) {
+        if (rows.length < 100) return;
+        continue;
       }
       try {
         const accepted = await this.api.sendOutbox(batch);
         this.store.ackOutbox(accepted);
-        const rejected = rows.map((r) => r.id).filter((id) => !accepted.includes(id));
+        this.onDelivered?.(rows.filter((r) => accepted.includes(r.id)));
+        const rejected = rows
+          .filter((r) => r.kind !== 'payment_cancel')
+          .map((r) => r.id)
+          .filter((id) => !accepted.includes(id));
         if (rejected.length) this.store.failOutbox(rejected, 'ditolak API');
         this.setOnline(true);
         if (rows.length < 100) return;
       } catch (err) {
         this.store.failOutbox(
-          rows.map((r) => r.id),
+          rows.filter((r) => r.kind !== 'payment_cancel').map((r) => r.id),
           err instanceof Error ? err.message : String(err),
         );
         if (!(err instanceof DeviceApiError)) this.setOnline(false);
         return;
+      }
+    }
+  }
+
+  /** Called with outbox rows the API confirmed (vouchers → mark synced locally). */
+  onDelivered: ((rows: OutboxRow[]) => void) | null = null;
+
+  /** Cancels that could not be sent while offline (payload: { paymentId }). */
+  private async flushCancels(rows: OutboxRow[]) {
+    for (const row of rows) {
+      const { paymentId } = JSON.parse(row.payload) as { paymentId: string };
+      try {
+        await this.api.cancelPayment(paymentId);
+        this.store.ackOutbox([row.id]);
+      } catch (err) {
+        if (err instanceof DeviceApiError && err.status === 404) this.store.ackOutbox([row.id]);
+        else this.store.failOutbox([row.id], err instanceof Error ? err.message : String(err));
       }
     }
   }

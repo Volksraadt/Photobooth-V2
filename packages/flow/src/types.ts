@@ -69,8 +69,19 @@ export const DEFAULT_FLOW_TIMINGS: FlowTimings = {
   captureAutoFinishMs: 3000,
 };
 
+export type VoucherStatus =
+  'idle' | 'checking' | 'invalid' | 'used' | 'expired' | 'insufficient' | 'error';
+
+/** Voucher being typed on the Payment page (digits only). */
+export type VoucherState = { code: string; status: VoucherStatus };
+
+export const VOUCHER_CODE_LENGTH = 12;
+
 export type FlowContext = {
   config: BoothConfig;
+  /** API reachable (from the agent). Offline: QRIS is not created/shown; voucher + cash still work. */
+  online: boolean;
+  voucher: VoucherState;
   /** Applied when the flow next returns to Cover (never mid-session). */
   pendingConfig: BoothConfig | null;
   timings: FlowTimings;
@@ -91,6 +102,7 @@ export type FlowContext = {
 
 export type FlowInput = {
   config: BoothConfig;
+  online?: boolean;
   timings?: Partial<FlowTimings>;
 };
 
@@ -107,7 +119,14 @@ export type FlowEvent =
   | { type: 'RETAKE_ALL' }
   | { type: 'ADD_PRINT' }
   | { type: 'REMOVE_PRINT' }
-  | { type: 'PAYMENT.PAID'; paymentId?: string }
+  /** QRIS settled (paymentId), or cash approved by the operator (method: 'cash'). */
+  | { type: 'PAYMENT.PAID'; paymentId?: string; method?: PaymentMethod }
+  | { type: 'NETWORK.ONLINE' }
+  | { type: 'NETWORK.OFFLINE' }
+  | { type: 'VOUCHER.KEY'; key: string }
+  | { type: 'VOUCHER.BACKSPACE' }
+  | { type: 'VOUCHER.SUBMIT' }
+  | { type: 'CASH.CANCEL' }
   | { type: 'PAYMENT.FAILED'; message?: string }
   | { type: 'CAMERA.ERROR'; message?: string }
   | { type: 'PROCESSING.PROGRESS'; progress: number }
@@ -128,9 +147,36 @@ export type FlowEvent =
 export type CreatePaymentInput = {
   sessionId: string;
   sessionCode: string;
+  /** ISO 8601, UTC. */
+  startedAt: string;
+  boothId: string;
+  configVersion: number;
+  frameId: string;
   amount: number;
   expirySec: number;
 };
+
+/** Thrown by createPayment when the API is unreachable: the page stays, without QRIS. */
+export class PaymentOfflineError extends Error {
+  readonly offline = true;
+  constructor(message = 'API tidak dapat dihubungi') {
+    super(message);
+    this.name = 'PaymentOfflineError';
+  }
+}
+
+export type RedeemVoucherInput = {
+  code: string;
+  sessionId: string;
+  sessionCode: string;
+  startedAt: string;
+  boothId: string;
+  configVersion: number;
+  amount: number;
+};
+export type RedeemVoucherOutput =
+  | { ok: true; offline: boolean }
+  | { ok: false; reason: Exclude<VoucherStatus, 'idle' | 'checking'> };
 export type CreatePaymentOutput = {
   paymentId: string;
   qrString: string;

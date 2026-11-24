@@ -96,7 +96,46 @@ const MIGRATIONS: string[] = [
     updated_at text not null
   );
   `,
+  // v2 (F4): voucher list for offline validation, cash approvals, offline flag per session.
+  `
+  drop table local_vouchers;
+  create table local_vouchers (
+    code_hash text not null,
+    booth_id text not null,
+    value_type text not null,
+    value integer not null default 0,
+    expires_at text,
+    -- used according to the API (another device, or synced)
+    remote_used_at text,
+    -- used on this device
+    used_at text,
+    used_session_id text,
+    synced integer not null default 0,
+    primary key (booth_id, code_hash)
+  );
+  create table cash_approvals (
+    id text primary key,
+    session_id text not null,
+    amount integer not null,
+    approved_at text not null,
+    offline integer not null default 0
+  );
+  alter table local_sessions add column offline integer not null default 0;
+  alter table local_sessions add column payment_id text;
+  `,
 ];
+
+export type LocalVoucherRow = {
+  code_hash: string;
+  booth_id: string;
+  value_type: 'full' | 'amount';
+  value: number;
+  expires_at: string | null;
+  remote_used_at: string | null;
+  used_at: string | null;
+  used_session_id: string | null;
+  synced: number;
+};
 
 export type LocalSessionRow = {
   id: string;
@@ -114,6 +153,8 @@ export type LocalSessionRow = {
   started_at: string;
   completed_at: string | null;
   sync_status: string;
+  offline: number;
+  payment_id: string | null;
   created_at: string;
   updated_at: string;
 };
@@ -137,9 +178,12 @@ export type LocalFileRow = {
   created_at: string;
 };
 
+export type OutboxKind =
+  'device_event' | 'print_job' | 'voucher_use' | 'cash_approval' | 'session' | 'payment_cancel';
+
 export type OutboxRow = {
   id: string;
-  kind: 'device_event' | 'print_job';
+  kind: OutboxKind;
   payload: string;
   created_at: string;
   attempts: number;
@@ -505,6 +549,10 @@ export class AgentStore {
     );
   }
 
+  resetOutboxBackoff() {
+    this.run('update outbox set next_attempt_at = ? where next_attempt_at > ?', now(), now());
+  }
+
   outboxCount(): number {
     return this.get<{ n: number }>('select count(*) as n from outbox')!.n;
   }
@@ -530,6 +578,129 @@ export class AgentStore {
         row.id,
       );
     }
+  }
+
+  // --- payments (F4) ---
+
+  /** Paid while offline (voucher validated locally / cash) or payment reference. */
+  setSessionPayment(
+    id: string,
+    patch: { method: string; paymentId?: string | null; offline: boolean },
+  ) {
+    this.run(
+      `update local_sessions set payment_method = ?, payment_id = coalesce(?, payment_id),
+         offline = max(offline, ?), updated_at = ? where id = ?`,
+      patch.method,
+      patch.paymentId ?? null,
+      patch.offline ? 1 : 0,
+      now(),
+      id,
+    );
+  }
+
+  /**
+   * Replaces the synced voucher list of a booth. Local usages that the API does not know yet
+   * (synced = 0) are kept, also for vouchers missing from the new list.
+   */
+  replaceVouchers(
+    boothId: string,
+    list: {
+      codeHash: string;
+      valueType: 'full' | 'amount';
+      value: number;
+      expiresAt: string | null;
+      usedAt: string | null;
+    }[],
+  ) {
+    this.db.exec('begin');
+    try {
+      this.run(
+        'delete from local_vouchers where booth_id = ? and (used_at is null or synced = 1)',
+        boothId,
+      );
+      const stmt = this.db.prepare(
+        `insert into local_vouchers (code_hash, booth_id, value_type, value, expires_at, remote_used_at)
+         values (?, ?, ?, ?, ?, ?)
+         on conflict(booth_id, code_hash) do update set value_type = excluded.value_type,
+           value = excluded.value, expires_at = excluded.expires_at,
+           remote_used_at = excluded.remote_used_at`,
+      );
+      for (const v of list) {
+        stmt.run(v.codeHash, boothId, v.valueType, v.value, v.expiresAt, v.usedAt);
+      }
+      this.db.exec('commit');
+    } catch (err) {
+      this.db.exec('rollback');
+      throw err;
+    }
+  }
+
+  voucher(boothId: string, codeHash: string): LocalVoucherRow | undefined {
+    return this.get<LocalVoucherRow>(
+      'select * from local_vouchers where booth_id = ? and code_hash = ?',
+      boothId,
+      codeHash,
+    );
+  }
+
+  voucherCount(boothId: string): number {
+    return this.get<{ n: number }>(
+      'select count(*) as n from local_vouchers where booth_id = ?',
+      boothId,
+    )!.n;
+  }
+
+  /** Marks a voucher used by this device. Returns false when it was already used. */
+  useVoucher(
+    boothId: string,
+    codeHash: string,
+    sessionId: string,
+    usedAt: string,
+    synced: boolean,
+  ): boolean {
+    const res = this.run(
+      `update local_vouchers set used_at = ?, used_session_id = ?, synced = ?
+       where booth_id = ? and code_hash = ? and (used_at is null or used_session_id = ?)`,
+      usedAt,
+      sessionId,
+      synced ? 1 : 0,
+      boothId,
+      codeHash,
+      sessionId,
+    );
+    return Number(res.changes) > 0;
+  }
+
+  markVoucherSynced(boothId: string, codeHash: string) {
+    this.run(
+      'update local_vouchers set synced = 1 where booth_id = ? and code_hash = ?',
+      boothId,
+      codeHash,
+    );
+  }
+
+  addCashApproval(a: {
+    id: string;
+    sessionId: string;
+    amount: number;
+    approvedAt: string;
+    offline: boolean;
+  }) {
+    this.run(
+      'insert into cash_approvals (id, session_id, amount, approved_at, offline) values (?, ?, ?, ?, ?) on conflict(id) do nothing',
+      a.id,
+      a.sessionId,
+      a.amount,
+      a.approvedAt,
+      a.offline ? 1 : 0,
+    );
+  }
+
+  pendingOutboxByKind(): Record<string, number> {
+    const rows = this.all<{ kind: string; n: number }>(
+      'select kind, count(*) as n from outbox group by kind',
+    );
+    return Object.fromEntries(rows.map((r) => [r.kind, r.n]));
   }
 
   // --- camera pairings ---

@@ -3,13 +3,20 @@ import {
   activeConfigForDevice,
   createPairingCode,
   pairingStatus,
+  PaymentRepoError,
+  recordCashApproval,
   recordDeviceOutbox,
   recordHeartbeat,
+  redeemVoucher,
+  syncDeviceSession,
+  type Db,
+  type DeviceRef,
 } from '@pb/db';
 import { Hono } from 'hono';
 import { streamSSE } from 'hono/streaming';
 import { z } from 'zod';
 import { deviceAuth } from '../middleware/device-auth';
+import { devicePaymentRoutes } from './payment-routes';
 import type { AppEnv } from '../types';
 
 const PairStartBody = z.object({
@@ -34,7 +41,16 @@ const HeartbeatBody = z.object({
 const OutboxId = z.string().regex(/^[a-z0-9]{8,64}$/);
 const IsoTime = z.iso.datetime({ offset: true }).transform((v) => new Date(v));
 
-/** Agent outbox batch (F3): device_events + print_jobs, idempotent by outbox id. */
+const OutboxSession = z.object({
+  id: z.string().min(1).max(64),
+  code: z.string().regex(/^[A-HJ-NP-Z2-9]{8}$/),
+  startedAt: IsoTime,
+});
+
+/**
+ * Agent outbox batch, idempotent by outbox id. F3: device_events + print_jobs.
+ * F4: voucherUses (offline redeems), cashApprovals, sessions (full record after processing).
+ */
 const OutboxBody = z.object({
   events: z
     .array(
@@ -59,7 +75,93 @@ const OutboxBody = z.object({
       }),
     )
     .max(200),
+  voucherUses: z
+    .array(
+      z.object({
+        id: OutboxId,
+        codeHash: z.string().regex(/^[a-f0-9]{64}$/),
+        session: OutboxSession,
+        amount: z.number().int().nonnegative(),
+        usedAt: IsoTime,
+        offline: z.boolean(),
+      }),
+    )
+    .max(200)
+    .default([]),
+  cashApprovals: z
+    .array(
+      z.object({
+        id: OutboxId,
+        session: OutboxSession,
+        amount: z.number().int().nonnegative(),
+        approvedAt: IsoTime,
+        offline: z.boolean(),
+      }),
+    )
+    .max(200)
+    .default([]),
+  sessions: z
+    .array(
+      z.object({
+        id: OutboxId,
+        session: OutboxSession.extend({
+          completedAt: IsoTime.nullable(),
+          status: z.enum(['completed', 'failed', 'capturing']),
+          frameId: z.string().max(64).nullable(),
+          filterId: z.string().max(64).nullable(),
+          paymentMethod: z.enum(['qris', 'voucher', 'cash', 'free']).nullable(),
+          amount: z.number().int().nonnegative(),
+          extraPrints: z.number().int().min(0).max(100),
+          offline: z.boolean(),
+        }),
+      }),
+    )
+    .max(200)
+    .default([]),
 });
+
+type Outbox = z.infer<typeof OutboxBody>;
+
+/**
+ * F4 outbox items, applied one by one. A permanent conflict (session id/code owned by another
+ * booth, …) is recorded as a `sync_conflict` device event and acknowledged, so it is not retried
+ * forever; unexpected errors are not acknowledged (the agent retries with backoff).
+ */
+async function applyMoneyOutbox(db: Db, device: DeviceRef, body: Outbox): Promise<string[]> {
+  const accepted: string[] = [];
+  const run = async (id: string, label: string, fn: () => Promise<unknown>) => {
+    try {
+      await fn();
+      accepted.push(id);
+    } catch (err) {
+      if (!(err instanceof PaymentRepoError)) {
+        console.error(`[api] outbox ${label} ${id} failed`, err);
+        return;
+      }
+      await recordDeviceOutbox(db, device, {
+        events: [
+          {
+            id,
+            level: 'error',
+            kind: 'sync_conflict',
+            message: `${label}: ${err.message}`,
+            data: { code: err.code },
+            occurredAt: new Date(),
+          },
+        ],
+        printJobs: [],
+      });
+      accepted.push(id);
+    }
+  };
+  // Money first (it sets the payment method), then the session record.
+  for (const v of body.voucherUses) await run(v.id, 'voucher', () => redeemVoucher(db, device, v));
+  for (const a of body.cashApprovals)
+    await run(a.id, 'cash', () => recordCashApproval(db, device, a));
+  for (const s of body.sessions)
+    await run(s.id, 'session', () => syncDeviceSession(db, device, s.session));
+  return accepted;
+}
 
 /** Unauthenticated pairing endpoints (a kiosk has no token yet). */
 export function pairRoutes() {
@@ -115,12 +217,23 @@ export function deviceRoutes() {
             wake?.();
           })
         : () => {};
+      const paymentQueue: { paymentId: string; status: string }[] = [];
+      const unsubscribePayments = deps.deviceSignals.subscribe(device.id, (s) => {
+        paymentQueue.push(s);
+        wake?.();
+      });
       stream.onAbort(() => {
         unsubscribe();
+        unsubscribePayments();
         wake?.();
       });
       await stream.writeSSE({ event: 'ready', data: JSON.stringify({ boothId: device.boothId }) });
       while (!stream.aborted) {
+        const signal = paymentQueue.shift();
+        if (signal) {
+          await stream.writeSSE({ event: 'payment', data: JSON.stringify(signal) });
+          continue;
+        }
         if (pending > 0) {
           pending = 0;
           await stream.writeSSE({
@@ -137,9 +250,11 @@ export function deviceRoutes() {
           };
         });
         wake = null;
-        if (pending === 0 && !stream.aborted) await stream.write(': keep-alive\n\n');
+        if (pending === 0 && paymentQueue.length === 0 && !stream.aborted)
+          await stream.write(': keep-alive\n\n');
       }
       unsubscribe();
+      unsubscribePayments();
     });
   });
 
@@ -154,8 +269,11 @@ export function deviceRoutes() {
     const body = OutboxBody.safeParse(await c.req.json().catch(() => null));
     if (!body.success) return c.json({ error: 'invalid_body', issues: body.error.issues }, 400);
     const accepted = await recordDeviceOutbox(c.var.deps.db, c.var.device, body.data);
+    accepted.push(...(await applyMoneyOutbox(c.var.deps.db, c.var.device, body.data)));
     return c.json({ accepted });
   });
+
+  app.route('/', devicePaymentRoutes());
 
   return app;
 }

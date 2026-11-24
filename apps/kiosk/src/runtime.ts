@@ -37,6 +37,10 @@ export function buildRuntime(snapshot: FlowSnapshot, camera: CameraRuntime): Ren
     selectedFrameId: session?.frameId ?? null,
     selectedFilterId: filterShown ? (session?.filterId ?? null) : null,
     qrisString: session?.qrString ?? null,
+    // Offline: a QR could never be confirmed, so it is not shown (voucher + cash remain).
+    qrisHidden: !context.online || !config.flow.paymentMethods.includes('qris'),
+    voucherCode: context.voucher.code,
+    voucherStatus: context.voucher.status,
     paymentExpiresAt: session?.paymentExpiresAt ? Date.parse(session.paymentExpiresAt) : null,
     paymentTotalSec: config.flow.qrisExpirySec,
     printSheets: printSheets(config, session),

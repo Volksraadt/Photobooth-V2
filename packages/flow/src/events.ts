@@ -2,7 +2,13 @@ import type { ButtonAction } from '@pb/schema';
 import type { FlowEvent } from './types';
 
 /** Renderer action (button press, picker tap) → flow event. */
-export type FlowUiAction = ButtonAction | { kind: 'selectFrame'; frameId: string };
+export type FlowUiAction =
+  | ButtonAction
+  | { kind: 'selectFrame'; frameId: string }
+  /** voucher-input keypad / keyboard. */
+  | { kind: 'voucherKey'; key: string }
+  | { kind: 'voucherBackspace' }
+  | { kind: 'voucherSubmit' };
 
 export function uiActionToEvent(action: FlowUiAction): FlowEvent {
   switch (action.kind) {
@@ -32,5 +38,11 @@ export function uiActionToEvent(action: FlowUiAction): FlowEvent {
       return { type: 'REMOVE_PRINT' };
     case 'selectPayment':
       return { type: 'SELECT_PAYMENT', method: action.method };
+    case 'voucherKey':
+      return { type: 'VOUCHER.KEY', key: action.key };
+    case 'voucherBackspace':
+      return { type: 'VOUCHER.BACKSPACE' };
+    case 'voucherSubmit':
+      return { type: 'VOUCHER.SUBMIT' };
   }
 }

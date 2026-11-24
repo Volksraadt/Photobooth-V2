@@ -214,6 +214,52 @@ describe('PageRenderer', () => {
       expect(q(container, '[data-pb-timer]')).toBeNull();
     });
 
+    it('payment offline: QRIS and timer are not drawn', () => {
+      const { container } = renderPage('payment', {
+        runtime: {
+          qrisString: 'QRIS-TEST',
+          paymentExpiresAt: Date.now() + 90_000,
+          qrisHidden: true,
+        },
+      });
+      expect(q(container, '[data-pb-qris]')).toBeNull();
+      expect(q(container, '[data-pb-timer]')).toBeNull();
+      expect(q(container, '[data-pb-voucher]')).not.toBeNull();
+    });
+
+    it('payment: voucher keypad emits key actions, keyboard works, status is shown', () => {
+      const onAction = vi.fn();
+      const { container, rerender } = renderPage('payment', {
+        runtime: { voucherCode: '12345678' },
+        onAction,
+      });
+      const voucher = q(container, '[data-pb-voucher]')!;
+      expect(q(voucher, '[data-pb-voucher-code]')!.textContent).toBe('1234-5678');
+      const keypad = q(voucher, '[data-pb-voucher-key="7"]');
+      if (keypad) {
+        fireEvent.pointerDown(keypad);
+        expect(onAction).toHaveBeenCalledWith({ kind: 'voucherKey', key: '7' });
+        fireEvent.pointerDown(q(voucher, '[data-pb-voucher-key="✓"]')!);
+        expect(onAction).toHaveBeenCalledWith({ kind: 'voucherSubmit' });
+      }
+      fireEvent.keyDown(window, { key: '3' });
+      fireEvent.keyDown(window, { key: 'Enter' });
+      expect(onAction).toHaveBeenCalledWith({ kind: 'voucherKey', key: '3' });
+      expect(onAction).toHaveBeenCalledWith({ kind: 'voucherSubmit' });
+      rerender(
+        <PageRenderer
+          page={config.pages.payment}
+          config={config}
+          mode="live"
+          runtime={{ voucherCode: '', voucherStatus: 'used' }}
+          onAction={onAction}
+        />,
+      );
+      expect(q(container, '[data-pb-voucher-status="used"]')!.textContent).toBe(
+        'Voucher sudah dipakai',
+      );
+    });
+
     it('processing and result', () => {
       const a = renderPage('processing', { runtime: { progress: 0.5 } });
       expect(q(a.container, '[data-pb-progress]')!.dataset.pbProgress).toBe('0.5');

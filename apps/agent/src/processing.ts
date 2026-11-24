@@ -137,6 +137,24 @@ export class Processor {
       data: { ...s, configVersion: config.configVersion },
       status: 'completed',
     });
+    // Session record for Studio (sent when online; idempotent upsert by session id).
+    const local = this.store.session(s.id);
+    const method = ['qris', 'voucher', 'cash', 'free'].includes(s.paymentMethod ?? '')
+      ? s.paymentMethod
+      : null;
+    this.store.enqueue('session', {
+      id: s.id,
+      code: s.code,
+      startedAt: s.startedAt,
+      completedAt: local?.completed_at ?? new Date().toISOString(),
+      status: 'completed',
+      frameId: s.frameId,
+      filterId: s.filterId || null,
+      paymentMethod: method,
+      amount: s.amount,
+      extraPrints: s.extraPrints,
+      offline: !!local?.offline,
+    });
 
     let printJob: PrintJobRow | null = null;
     let printError: string | null = null;

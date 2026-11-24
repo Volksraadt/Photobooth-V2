@@ -7,7 +7,16 @@ import type { BoothConfig, ButtonAction, Frame, Filter } from '@pb/schema';
 export type RenderMode = 'live' | 'editor';
 
 /** What the renderer asks its host to do. Superset of ButtonAction (pickers emit selectFrame). */
-export type RendererAction = ButtonAction | { kind: 'selectFrame'; frameId: string };
+export type RendererAction =
+  | ButtonAction
+  | { kind: 'selectFrame'; frameId: string }
+  // voucher-input (F4): keypad taps, physical keyboard / barcode scanner
+  | { kind: 'voucherKey'; key: string }
+  | { kind: 'voucherBackspace' }
+  | { kind: 'voucherSubmit' };
+
+export type VoucherRuntimeStatus =
+  'idle' | 'checking' | 'invalid' | 'used' | 'expired' | 'insufficient' | 'error';
 
 export type RuntimePhoto = { url: string };
 
@@ -58,6 +67,9 @@ export type RenderRuntime = {
   paymentExpiresAt?: number | null;
   paymentTotalSec?: number;
   voucherCode?: string;
+  voucherStatus?: VoucherRuntimeStatus;
+  /** Live: QRIS unavailable (device offline / not enabled): qris + payment-timer are not drawn. */
+  qrisHidden?: boolean;
 
   // Review / processing / result
   printSheets?: number;

@@ -1,14 +1,28 @@
-import { sql } from 'drizzle-orm';
+import { payments } from '@pb/db';
+import { eq, sql } from 'drizzle-orm';
 import { Hono } from 'hono';
 import { cors } from 'hono/cors';
 import { HTTPException } from 'hono/http-exception';
+import { DeviceSignals } from './payments/device-signals';
+import { createPaymentGateway } from './payments/gateway';
 import { deviceRoutes, pairRoutes } from './routes/device-routes';
 import { studioRoutes } from './routes/studio-routes';
-import type { AppDeps, AppEnv } from './types';
+import { webhookRoutes } from './routes/webhook-routes';
+import type { AppDeps, AppEnv, ResolvedDeps } from './types';
 
 export type { AppDeps } from './types';
+export { DeviceSignals } from './payments/device-signals';
+export { createPaymentGateway, encryptCredential, type PaymentGateway } from './payments/gateway';
 
-export function createApp(deps: AppDeps) {
+export function createApp(input: AppDeps) {
+  const secretBox = input.secretBox ?? null;
+  const deps: ResolvedDeps = {
+    ...input,
+    secretBox,
+    payments: input.payments ?? createPaymentGateway({ mode: 'midtrans', secretBox }),
+    deviceSignals: input.deviceSignals ?? new DeviceSignals(),
+    publicApiUrl: input.publicApiUrl ?? null,
+  };
   const app = new Hono<AppEnv>();
 
   app.use('*', async (c, next) => {
@@ -50,6 +64,28 @@ export function createApp(deps: AppDeps) {
   app.route('/pair', pairRoutes());
   app.route('/device', deviceRoutes());
   app.route('/studio', studioRoutes());
+  app.route('/webhooks', webhookRoutes());
+
+  // Dev only (PB_PAYMENT_PROVIDER=mock): "the buyer paid" → a signed notification through the
+  // real webhook path. Never available with the real Midtrans gateway.
+  if (deps.payments.mode === 'mock' && process.env.NODE_ENV !== 'production') {
+    app.post('/dev/payments/:id/simulate-paid', async (c) => {
+      const [p] = await deps.db
+        .select()
+        .from(payments)
+        .where(eq(payments.id, c.req.param('id')));
+      if (!p) return c.json({ error: 'not_found' }, 404);
+      const mock = deps.payments.mockFor(p.orgId, p.env ?? 'sandbox');
+      if (!mock) return c.json({ error: 'not_mock' }, 400);
+      const notification = mock.simulatePaid(p.orderId);
+      const res = await app.request(`/webhooks/midtrans/${p.orgId}`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify(notification),
+      });
+      return c.json({ webhookStatus: res.status }, res.ok ? 200 : 502);
+    });
+  }
 
   return app;
 }

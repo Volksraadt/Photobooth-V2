@@ -347,6 +347,16 @@ Rekap dihitung dari `sessions` + `payments` + `print_jobs`. Untuk performa, buat
 - Publish: versi = `max(version)+1` per booth, `config.configVersion` = versi, audit `booth.publish` / `booth.rollback`, lalu `pg_notify('pb_booth_config', boothId)`. Rollback = publish ulang config versi lama sebagai versi baru.
 - Batas paket ditegakkan di server: `maxBooths` (buat booth), `maxFrames` (publish), `maxDevicesPerBooth` (klaim pairing, hanya device yang belum dicabut).
 
+### B.9 Ketetapan F4 (migrasi `0003_f4_payments.sql`)
+- `payment_credentials`: tambah `client_key` (bukan secret), `is_active` (indeks unik parsial `(org_id, provider) WHERE is_active`: satu env aktif), `last_test_message`. `encrypted_secret` = SecretBox dari JSON `{ "serverKey": … }`, AAD `org:<orgId>:payment:midtrans:<env>`. Tetap tanpa policy RLS (hanya API).
+- `payments`: tambah `env` (env kredensial saat charge; webhook diverifikasi dengan key env ini), `device_id`, `last_checked_at` (batas query status ke provider saat polling, 3 dtk). `id` = `order_id` = cuid2 dari agent per percobaan. Indeks `(org_id, status)` untuk daftar `paid_late`.
+- `vouchers`: tambah `batch_id`, `note`, `used_offline`. `code_hash` = hex PBKDF2-SHA256(kode 12 digit, salt `pb-voucher:v1:<boothId>`, 20.000 iterasi, 32 byte) — `hashVoucherCode()` di `@pb/crypto`. `code_last4` = 4 digit terakhir.
+- `cash_approvals`: tambah `device_id`, `approved_at`; `id` = id outbox agent (idempotent). `approved_by_pin_of` `null` = PIN admin booth.
+- `fee_settings`: seed `midtrans/qris 0.7000 %, fixed 0, effective_from 2024-01-01`.
+- `sessions`: dibuat API saat kontak pertama (charge QRIS, redeem voucher, tunai, atau sinkron sesi) dengan `id` + `code` dari kiosk; `payment_method`, `gross/fee/net_amount` diisi oleh pembayaran (QRIS: nominal tagihan, fee dari `fee_settings`; voucher/tunai: harga frame, fee 0; free: 0). `offline` = dibayar saat device offline. `synced_at` = catatan sesi lengkap diterima.
+- `device_events.kind` baru dari API: `voucher_conflict` (voucher dipakai dua sesi), `sync_conflict` (item outbox ditolak permanen). Dari agent: `voucher_offline`, `cash_approved`, `cash_pin_rejected`, `payment_failed`.
+- Status `payments`: `pending → paid | expired | canceled | failed`; `paid_late` = settlement yang terlambat/ganda (kandidat refund manual). `paid` dan `paid_late` final.
+
 ---
 
 ## C. Penyimpanan lokal (Agent, SQLite)
@@ -377,3 +387,18 @@ File `agent.sqlite` di folder data agent (Windows `%APPDATA%\photobooth-agent`, 
 - Outbox: dikirim per 100 ke `POST /device/events`; API menyimpan dengan id yang sama (`on conflict do nothing`) dan membalas id yang tersimpan → pengiriman ulang tidak menggandakan baris. Gagal → backoff 10 dtk × 2ⁿ (maks. 10 menit).
 - `print_jobs` di API: `session_id` diisi hanya bila sesi dengan kode tersebut sudah ada di org (sesi baru diunggah di F5); `sheets` tetap tercatat untuk estimasi kertas.
 - Heartbeat F3 menambah `printerStatus` (`ok`\|`warning`\|`error`\|`disconnected`\|`unknown`) → `devices.printer_status`. Tanpa migrasi DB (kolom sudah ada sejak F0).
+
+### C.2 Ketetapan F4 (SQLite `user_version` 2)
+| Tabel | Kolom |
+|---|---|
+| `local_vouchers` (dibuat ulang) | code_hash, booth_id (PK bersama), value_type (`full`\|`amount`), value, expires_at, remote_used_at (terpakai menurut API), used_at, used_session_id (terpakai di device ini), synced |
+| `cash_approvals` (baru) | id (= id outbox), session_id, amount, approved_at, offline |
+| `local_sessions` (+kolom) | offline (dibayar saat offline), payment_id |
+
+- Daftar voucher di-replace dari `GET /device/vouchers` saat start, tiap 60 dtk, saat config siap, dan saat kembali online; pemakaian lokal yang belum tersinkron (`synced = 0`) tidak pernah dihapus.
+- `outbox.kind` baru: `voucher_use` (payload: codeHash, session {id, code, startedAt}, amount, usedAt, offline), `cash_approval` (session, amount, approvedAt, offline), `session` (catatan sesi setelah processing), `payment_cancel` (paymentId; dikirim ke `POST /device/payments/:id/cancel`). `voucher_use`, `cash_approval`, `session` ikut batch `POST /device/events` (field `voucherUses`, `cashApprovals`, `sessions`).
+- Kode voucher tidak pernah disimpan di agent; hanya hash (lihat B.9).
+
+### A.7 Ketetapan F4 (renderer, tanpa perubahan schema)
+- `voucher-input` varian `keypad`: baris tampilan kode/status + keypad 3×4. Varian `field`: kolom setinggi `min(height, fontSize × 2,4)`; bila sisa tinggi kotak ≥ 1,2 × tinggi kolom, keypad ringkas 6×2 digambar di sisa kotak (editor dan kiosk sama). Keduanya menerima keyboard/scanner di mode live. Kode ditampilkan `1234-5678-9012`.
+- `qris` dan `payment-timer` tidak digambar di mode live bila `runtime.qrisHidden` (device offline atau QRIS tidak aktif).

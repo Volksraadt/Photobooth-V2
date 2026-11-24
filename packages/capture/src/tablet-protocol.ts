@@ -108,7 +108,11 @@ export type AgentToKiosk =
   | { type: 'signal'; peerId: string; data: SignalData }
   | { type: 'config'; version: number | null }
   | { type: 'printer'; status: PrinterStatusSummary }
-  | { type: 'processing'; sessionId: string; step: ProcessingStep; progress: number };
+  | { type: 'processing'; sessionId: string; step: ProcessingStep; progress: number }
+  /** F4: API reachability as seen by the agent (QRIS is hidden while offline). */
+  | { type: 'network'; online: boolean }
+  /** F4: a payment changed in the API (webhook → device stream → agent). */
+  | { type: 'payment'; paymentId: string; status: string };
 
 export type ProcessingStep = 'saving' | 'composing' | 'printing' | 'done';
 

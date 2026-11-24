@@ -3,6 +3,7 @@ import { generateSessionCode, type PageType } from '@pb/schema';
 import {
   and,
   assign,
+  not,
   enqueueActions,
   fromCallback,
   fromPromise,
@@ -31,7 +32,10 @@ import {
   type FlowInput,
   type FlowSession,
   type ProcessSessionInput,
+  type RedeemVoucherInput,
+  type RedeemVoucherOutput,
   type Shot,
+  VOUCHER_CODE_LENGTH,
   type ShotPhoto,
 } from './types';
 
@@ -94,6 +98,7 @@ function newSession(context: FlowContext, free: boolean): Partial<FlowContext> {
   };
   return {
     session,
+    voucher: { code: '', status: 'idle' },
     slideIndex: 0,
     activeSlot: null,
     retaking: false,
@@ -150,6 +155,9 @@ export const flowMachine = setup({
     createPayment: fromPromise<CreatePaymentOutput, CreatePaymentInput>(
       notProvided('createPayment'),
     ),
+    redeemVoucher: fromPromise<RedeemVoucherOutput, RedeemVoucherInput>(
+      notProvided('redeemVoucher'),
+    ),
     processSession: fromCallback<FlowEvent, ProcessSessionInput>(({ sendBack }) => {
       sendBack({ type: 'PROCESSING.FAILED', message: 'processSession is not provided' });
     }),
@@ -174,6 +182,18 @@ export const flowMachine = setup({
     tutorialEnabled: ({ context }) => context.config.flow.tutorialEnabled,
     reviewEnabled: ({ context }) => context.config.flow.reviewEnabled,
     qrisEnabled: ({ context }) => context.config.flow.paymentMethods.includes('qris'),
+    voucherEnabled: ({ context }) => context.config.flow.paymentMethods.includes('voucher'),
+    voucherReady: ({ context }) =>
+      context.config.flow.paymentMethods.includes('voucher') &&
+      context.voucher.code.length === VOUCHER_CODE_LENGTH,
+    selectsCash: ({ context, event }) =>
+      event.type === 'SELECT_PAYMENT' &&
+      event.method === 'cash' &&
+      context.config.flow.paymentMethods.includes('cash'),
+    isOnline: ({ context }) => context.online,
+    offlineError: ({ event }) =>
+      (event as { error?: { offline?: unknown } }).error?.offline === true,
+    voucherAccepted: ({ event }) => (event as { output?: RedeemVoucherOutput }).output?.ok === true,
     slideTimed: ({ context }) =>
       context.config.pages.tutorial.slides?.[context.slideIndex]?.durationSec !== undefined,
     hasNextSlide: ({ context }) =>
@@ -189,7 +209,9 @@ export const flowMachine = setup({
       event.type === 'SELECT_PAYMENT' && context.config.flow.paymentMethods.includes(event.method),
     paymentMatches: ({ context, event }) =>
       event.type === 'PAYMENT.PAID' &&
-      (!event.paymentId || event.paymentId === context.session?.paymentId),
+      (event.method === 'cash'
+        ? context.config.flow.paymentMethods.includes('cash')
+        : !event.paymentId || event.paymentId === context.session?.paymentId),
     hasQr: ({ context }) => !!context.session?.qrString,
     allFilled: ({ context }) => allFilled(context.session),
     retaking: ({ context }) => context.retaking,
@@ -273,6 +295,36 @@ export const flowMachine = setup({
         }),
       });
     }),
+    /** Paid by QRIS or cash. Paying another way cancels a pending QRIS first. */
+    markPaid: enqueueActions(({ context, event, enqueue }) => {
+      if (event.type !== 'PAYMENT.PAID' || !context.session) return;
+      const method = event.method ?? 'qris';
+      if (method !== 'qris' && context.session.paymentId && !context.session.paid) {
+        enqueue('cancelPayment');
+      }
+      enqueue.assign({
+        session: updateSession(context, {
+          paid: true,
+          paymentMethod: method,
+          ...(method !== 'qris' ? { paymentId: null, qrString: null, paymentExpiresAt: null } : {}),
+        }),
+        voucher: { code: '', status: 'idle' },
+      });
+    }),
+    markVoucherPaid: assign(({ context }) => ({
+      session: updateSession(context, { paid: true, paymentMethod: 'voucher' }),
+      voucher: { code: '', status: 'idle' as const },
+    })),
+    voucherKey: assign(({ context, event }) => {
+      if (event.type !== 'VOUCHER.KEY' || !/^\d$/.test(event.key)) return {};
+      if (context.voucher.code.length >= VOUCHER_CODE_LENGTH) return {};
+      return { voucher: { code: context.voucher.code + event.key, status: 'idle' as const } };
+    }),
+    voucherBackspace: assign(({ context }) => ({
+      voucher: { code: context.voucher.code.slice(0, -1), status: 'idle' as const },
+    })),
+    setOnline: assign({ online: true }),
+    setOffline: assign({ online: false }),
     activateNextSlot: assign(({ context }) => ({
       activeSlot: firstEmptySlot(context.session),
       retaking: false,
@@ -304,6 +356,8 @@ export const flowMachine = setup({
   id: 'flow',
   context: ({ input }) => ({
     config: input.config,
+    online: input.online ?? true,
+    voucher: { code: '', status: 'idle' },
     pendingConfig: null,
     timings: { ...DEFAULT_FLOW_TIMINGS, ...input.timings },
     page: null,
@@ -319,6 +373,8 @@ export const flowMachine = setup({
   initial: 'cover',
   on: {
     ACTIVITY: { actions: 'restartIdle' },
+    'NETWORK.ONLINE': { actions: 'setOnline' },
+    'NETWORK.OFFLINE': { actions: 'setOffline' },
     // Before payment, idle returns to Cover. After payment, states handle it themselves (continue).
     'IDLE.TIMEOUT': { guard: 'unpaid', target: '.cover' },
     FAIL: { target: '.error', actions: 'setUnknownError' },
@@ -426,13 +482,23 @@ export const flowMachine = setup({
       entry: [assign({ page: 'payment' as PageType | null }), 'restartIdle'],
       initial: 'route',
       states: {
-        route: { always: [{ guard: 'qrisEnabled', target: 'creating' }, { target: 'awaiting' }] },
+        // Offline: no QRIS (it could not be confirmed); voucher + cash still work.
+        route: {
+          always: [
+            { guard: and(['qrisEnabled', 'isOnline']), target: 'creating' },
+            { target: 'awaiting' },
+          ],
+        },
         creating: {
           invoke: {
             src: 'createPayment',
             input: ({ context }) => ({
               sessionId: context.session!.id,
               sessionCode: context.session!.code,
+              startedAt: context.session!.startedAt,
+              boothId: context.config.boothId,
+              configVersion: context.config.configVersion,
+              frameId: context.session!.frameId ?? '',
               amount: paymentAmount(context.config, context.session),
               expirySec: context.config.flow.qrisExpirySec,
             }),
@@ -447,10 +513,11 @@ export const flowMachine = setup({
                 }),
               })),
             },
-            onError: {
-              target: '#flow.error',
-              actions: 'setPaymentError',
-            },
+            onError: [
+              // Went offline while creating: stay on Payment without QRIS.
+              { guard: 'offlineError', target: 'awaiting', actions: 'setOffline' },
+              { target: '#flow.error', actions: 'setPaymentError' },
+            ],
           },
         },
         awaiting: {
@@ -458,19 +525,78 @@ export const flowMachine = setup({
             // QRIS expired without payment: cancel and let the buyer start the payment again.
             paymentExpiry: { guard: 'hasQr', target: '#flow.framePick', actions: 'releasePayment' },
           },
+          on: {
+            // Back online without a QR: create it now.
+            'NETWORK.ONLINE': [
+              {
+                guard: and(['qrisEnabled', not('hasQr')]),
+                target: 'creating',
+                actions: 'setOnline',
+              },
+              { actions: 'setOnline' },
+            ],
+            'VOUCHER.SUBMIT': { guard: 'voucherReady', target: 'checkingVoucher' },
+            SELECT_PAYMENT: [
+              { guard: 'selectsCash', target: 'cash' },
+              {
+                guard: 'paymentMethodEnabled',
+                actions: assign(({ context, event }) => ({
+                  session: updateSession(context, { paymentMethod: event.method }),
+                })),
+              },
+            ],
+          },
+        },
+        checkingVoucher: {
+          entry: assign(({ context }) => ({
+            voucher: { code: context.voucher.code, status: 'checking' as const },
+          })),
+          invoke: {
+            src: 'redeemVoucher',
+            input: ({ context }) => ({
+              code: context.voucher.code,
+              sessionId: context.session!.id,
+              sessionCode: context.session!.code,
+              startedAt: context.session!.startedAt,
+              boothId: context.config.boothId,
+              configVersion: context.config.configVersion,
+              amount: paymentAmount(context.config, context.session),
+            }),
+            onDone: [
+              {
+                guard: 'voucherAccepted',
+                target: '#flow.capture',
+                // A pending QRIS is cancelled; the voucher pays the session.
+                actions: ['releasePayment', 'markVoucherPaid'],
+              },
+              {
+                target: 'awaiting',
+                actions: assign(({ event }) => ({
+                  voucher: {
+                    code: '',
+                    status: event.output.ok ? ('idle' as const) : event.output.reason,
+                  },
+                })),
+              },
+            ],
+            onError: {
+              target: 'awaiting',
+              actions: assign({ voucher: { code: '', status: 'error' as const } }),
+            },
+          },
+          // While checking: typing and Back are ignored (the redeem may already be recorded).
+          on: { 'VOUCHER.KEY': {}, 'VOUCHER.BACKSPACE': {}, BACK: {} },
+        },
+        // Waiting for the operator's PIN (the kiosk shows the system PIN pad).
+        cash: {
+          on: {
+            'CASH.CANCEL': 'awaiting',
+            SELECT_PAYMENT: { guard: 'paymentMethodEnabled', target: 'awaiting' },
+          },
         },
       },
       on: {
-        'PAYMENT.PAID': {
-          guard: 'paymentMatches',
-          target: 'capture',
-          actions: assign(({ context }) => ({
-            session: updateSession(context, {
-              paid: true,
-              paymentMethod: context.session?.paymentMethod ?? 'qris',
-            }),
-          })),
-        },
+        'PAYMENT.PAID': { guard: 'paymentMatches', target: 'capture', actions: 'markPaid' },
         'PAYMENT.FAILED': {
           target: 'error',
           actions: ['releasePayment', 'setPaymentError'],
@@ -481,6 +607,8 @@ export const flowMachine = setup({
             session: updateSession(context, { paymentMethod: event.method }),
           })),
         },
+        'VOUCHER.KEY': { guard: 'voucherEnabled', actions: 'voucherKey' },
+        'VOUCHER.BACKSPACE': { guard: 'voucherEnabled', actions: 'voucherBackspace' },
         BACK: { target: 'framePick', actions: 'releasePayment' },
       },
     },

@@ -11,6 +11,8 @@ import { z } from 'zod';
 import { mimeFromUrl } from './assets';
 import type { Agent } from './agent';
 import { CaptureFailedError } from './camera-hub';
+import { DeviceApiError } from './device-api';
+import { MoneyError } from './money';
 import { PrintError } from './print/printers';
 import { ProcessError, ProcessRequestSchema } from './processing';
 import { ImageRejectedError, writeDurable } from './sessions';
@@ -38,6 +40,30 @@ const SessionRefQuery = z.object({
   startedAt: z.string().min(10),
   slotIndex: z.coerce.number().int().min(1).max(20),
   takeNumber: z.coerce.number().int().min(1).max(100),
+});
+
+const SessionInfoSchema = z.object({
+  id: z.string().min(1).max(64),
+  code: z.string().regex(/^[A-Z2-9]{8}$/),
+  startedAt: z.string().min(10),
+  boothId: z.string().min(1).max(64),
+  configVersion: z.number().int().nonnegative(),
+});
+const PaymentBody = z.object({
+  session: SessionInfoSchema,
+  frameId: z.string().min(1).max(64),
+  amount: z.number().int().positive(),
+  expirySec: z.number().int().min(60).max(3600),
+});
+const VoucherBody = z.object({
+  code: z.string().min(1).max(32),
+  session: SessionInfoSchema,
+  amount: z.number().int().nonnegative(),
+});
+const CashBody = z.object({
+  pin: z.string().regex(/^\d{4,8}$/),
+  session: SessionInfoSchema,
+  amount: z.number().int().nonnegative(),
 });
 
 const fileUrl = (c: Context, id: string) => `${new URL(c.req.url).origin}/files/${id}`;
@@ -102,6 +128,10 @@ export function createLocalApi(agent: Agent) {
       return c.json({ error: err.code, message: err.message }, 503);
     if (err instanceof PrintError)
       return c.json({ error: 'print_failed', message: err.message }, 502);
+    if (err instanceof MoneyError)
+      return c.json({ error: err.code, message: err.message }, err.status as 400);
+    if (err instanceof DeviceApiError)
+      return c.json({ error: err.code ?? 'api_error', message: err.message }, 502);
     console.error('[agent] local api error', err);
     return c.json(
       { error: 'internal_error', message: err instanceof Error ? err.message : String(err) },
@@ -314,6 +344,40 @@ export function createLocalApi(agent: Agent) {
     agent.camera.forget(c.req.param('id'));
     return c.json({ ok: true });
   });
+
+  // --- payments (F4): QRIS via the API, vouchers + cash work offline ---
+
+  app.post('/payments', async (c) => {
+    const body = PaymentBody.safeParse(await c.req.json().catch(() => null));
+    if (!body.success) return c.json({ error: 'invalid_body', issues: body.error.issues }, 400);
+    const p = await agent.money.createPayment(body.data);
+    return c.json(p, 201);
+  });
+
+  app.get('/payments/:id', async (c) => c.json(await agent.money.getPayment(c.req.param('id'))));
+
+  app.post('/payments/:id/cancel', async (c) =>
+    c.json(await agent.money.cancelPayment(c.req.param('id'))),
+  );
+
+  app.post('/vouchers/redeem', async (c) => {
+    const body = VoucherBody.safeParse(await c.req.json().catch(() => null));
+    if (!body.success) return c.json({ error: 'invalid_body' }, 400);
+    return c.json(await agent.money.redeemVoucher(body.data));
+  });
+
+  app.post('/vouchers/sync', async (c) => {
+    await agent.money.syncVouchers();
+    return c.json({ ok: true });
+  });
+
+  app.post('/cash-approvals', async (c) => {
+    const body = CashBody.safeParse(await c.req.json().catch(() => null));
+    if (!body.success) return c.json({ error: 'invalid_body' }, 400);
+    return c.json(await agent.money.approveCash(body.data), 201);
+  });
+
+  app.get('/network', (c) => c.json({ online: agent.telemetry.isOnline }));
 
   // --- settings ---
 

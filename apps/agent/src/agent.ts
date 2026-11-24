@@ -12,6 +12,7 @@ import { createLanApi } from './lan-api';
 import { createLocalApi } from './local-api';
 import { AGENT_VERSION, type AgentOptions } from './options';
 import { PrintService } from './print/print-service';
+import { MoneyService } from './money';
 import { Processor } from './processing';
 import { SessionFiles } from './sessions';
 import { AgentStore } from './store';
@@ -29,6 +30,7 @@ export class Agent {
   readonly printer: PrintService;
   readonly processor: Processor;
   readonly telemetry: Telemetry;
+  readonly money: MoneyService;
   readonly id: string;
   private servers: Server[] = [];
   private wss: WebSocketServer[] = [];
@@ -68,6 +70,14 @@ export class Agent {
         this.broadcast({ type: 'processing', sessionId, step, progress }),
     );
     this.telemetry = new Telemetry(this.store, this.config.api, () => this.heartbeatBody());
+    this.money = new MoneyService(
+      this.store,
+      this.config,
+      this.telemetry,
+      (msg) => this.broadcast(msg),
+      event,
+    );
+    this.telemetry.subscribe((online) => this.broadcast({ type: 'network', online }));
 
     this.config.subscribe((s) => {
       this.broadcast({ type: 'config', version: s.status === 'ready' ? s.version : null });
@@ -123,6 +133,11 @@ export class Agent {
       camera: this.camera.state(),
       printer: this.printer.status,
       outboxPending: this.store.outboxCount(),
+      outboxByKind: this.store.pendingOutboxByKind(),
+      vouchers: (() => {
+        const boothId = cs.status === 'ready' ? cs.config.boothId : null;
+        return boothId ? this.store.voucherCount(boothId) : 0;
+      })(),
       printedSheets: this.store.printedSheets(),
       settings: this.settings(),
       lanPort: this.lanPort,
@@ -167,8 +182,10 @@ export class Agent {
 
     this.printer.start();
     await this.config.start();
-    if (this.options.telemetry)
+    if (this.options.telemetry) {
       this.telemetry.start(this.options.heartbeatMs, this.options.outboxFlushMs);
+      this.money.start();
+    }
     this.store.event({
       level: 'info',
       kind: 'agent_started',
@@ -188,6 +205,11 @@ export class Agent {
     ws.send(
       JSON.stringify({ type: 'printer', status: this.printer.status } satisfies AgentToKiosk),
     );
+    if (this.telemetry.isOnline !== null) {
+      ws.send(
+        JSON.stringify({ type: 'network', online: this.telemetry.isOnline } satisfies AgentToKiosk),
+      );
+    }
     const alive = setInterval(() => ws.readyState === ws.OPEN && ws.ping(), 15_000);
     ws.on('close', () => clearInterval(alive));
     ws.on('message', (raw) => {
@@ -232,6 +254,7 @@ export class Agent {
   async stop(): Promise<void> {
     this.config.stop();
     this.telemetry.stop();
+    this.money.stop();
     this.printer.stop();
     this.camera.stop();
     for (const w of this.wss) {

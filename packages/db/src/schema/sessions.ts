@@ -42,6 +42,7 @@ export const paymentStatus = pgEnum('payment_status', [
   'paid_late',
 ]);
 export const voucherValueType = pgEnum('voucher_value_type', ['full', 'amount']);
+export const providerEnv = pgEnum('provider_env', ['sandbox', 'production']);
 
 const orgId = () =>
   text('org_id')
@@ -141,10 +142,16 @@ export const payments = pgTable(
     providerRef: text('provider_ref'),
     feeAmount: integer('fee_amount'),
     raw: jsonb('raw'),
+    /** Credential env used for the charge (webhook verification uses the same key). */
+    env: providerEnv('env'),
+    deviceId: text('device_id').references(() => devices.id, { onDelete: 'set null' }),
+    /** Last provider status query (rate limit for device polling). */
+    lastCheckedAt: tz('last_checked_at'),
     ...timestamps,
   },
   (t) => [
     index('payments_org_idx').on(t.orgId),
+    index('payments_org_status_idx').on(t.orgId, t.status),
     index('payments_session_idx').on(t.sessionId),
     // A session may have many attempts but only one may be paid.
     uniqueIndex('payments_one_paid_per_session_uq')
@@ -170,6 +177,11 @@ export const vouchers = pgTable(
     usedAt: tz('used_at'),
     usedSessionId: text('used_session_id').references(() => sessions.id, { onDelete: 'set null' }),
     usedDeviceId: text('used_device_id').references(() => devices.id, { onDelete: 'set null' }),
+    /** Vouchers created together (Studio batch). */
+    batchId: text('batch_id'),
+    note: text('note'),
+    /** Redeemed while the device was offline (validated locally, reconciled later). */
+    usedOffline: boolean('used_offline').notNull().default(false),
     ...timestamps,
   },
   (t) => [
@@ -190,6 +202,8 @@ export const cashApprovals = pgTable(
       onDelete: 'set null',
     }),
     amount: integer('amount').notNull(),
+    deviceId: text('device_id').references(() => devices.id, { onDelete: 'set null' }),
+    approvedAt: tz('approved_at'),
     ...timestamps,
   },
   (t) => [index('cash_approvals_org_idx').on(t.orgId)],

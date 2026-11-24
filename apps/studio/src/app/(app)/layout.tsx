@@ -14,6 +14,14 @@ export default async function AppLayout({ children }: { children: ReactNode }) {
             <Link href="/booths" className="font-semibold">
               Photobooth Studio
             </Link>
+            <nav className="flex gap-4 text-sm">
+              <Link href="/booths" className="hover:underline">
+                Booth
+              </Link>
+              <Link href="/integrations" className="hover:underline" data-testid="nav-integrations">
+                Integrasi
+              </Link>
+            </nav>
             <span className="text-sm text-muted-foreground" data-testid="org-name">
               {org.name}
             </span>

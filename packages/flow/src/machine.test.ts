@@ -2,7 +2,14 @@ import { createDefaultBoothConfig, type BoothConfig } from '@pb/schema';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createActor, fromCallback, fromPromise } from 'xstate';
 import { flowMachine } from './machine';
-import type { CaptureShotInput, FlowEvent, ProcessSessionInput, ShotPhoto } from './types';
+import {
+  PaymentOfflineError,
+  type CaptureShotInput,
+  type FlowEvent,
+  type ProcessSessionInput,
+  type RedeemVoucherOutput,
+  type ShotPhoto,
+} from './types';
 
 function makeConfig(patch: (c: BoothConfig) => void = () => {}): BoothConfig {
   let n = 0;
@@ -13,8 +20,22 @@ function makeConfig(patch: (c: BoothConfig) => void = () => {}): BoothConfig {
 
 type Harness = ReturnType<typeof start>;
 
-function start(config: BoothConfig, opts: { cameraFails?: boolean } = {}) {
-  const calls = { cancelled: [] as (string | null)[], ended: [] as string[], captures: 0 };
+function start(
+  config: BoothConfig,
+  opts: {
+    cameraFails?: boolean;
+    online?: boolean;
+    paymentOffline?: boolean;
+    voucher?: (code: string) => RedeemVoucherOutput;
+  } = {},
+) {
+  const calls = {
+    cancelled: [] as (string | null)[],
+    ended: [] as string[],
+    captures: 0,
+    payments: 0,
+    vouchers: [] as string[],
+  };
   const machine = flowMachine.provide({
     actors: {
       connectCamera: fromPromise(async () => {
@@ -29,11 +50,21 @@ function start(config: BoothConfig, opts: { cameraFails?: boolean } = {}) {
           height: 1080,
         };
       }),
-      createPayment: fromPromise(async ({ input }) => ({
-        paymentId: `pay-${input.sessionCode}`,
-        qrString: `QR-${input.amount}`,
-        expiresAt: new Date(Date.now() + input.expirySec * 1000).toISOString(),
-      })),
+      createPayment: fromPromise(async ({ input }) => {
+        calls.payments++;
+        if (opts.paymentOffline) throw new PaymentOfflineError();
+        return {
+          paymentId: `pay-${input.sessionCode}-${calls.payments}`,
+          qrString: `QR-${input.amount}`,
+          expiresAt: new Date(Date.now() + input.expirySec * 1000).toISOString(),
+        };
+      }),
+      redeemVoucher: fromPromise(async ({ input }) => {
+        calls.vouchers.push(input.code);
+        return opts.voucher
+          ? opts.voucher(input.code)
+          : { ok: false as const, reason: 'invalid' as const };
+      }),
       processSession: fromCallback<FlowEvent, ProcessSessionInput>(({ sendBack, input }) => {
         const t = setTimeout(() => {
           sendBack({ type: 'PROCESSING.PROGRESS', progress: 0.5 });
@@ -54,7 +85,7 @@ function start(config: BoothConfig, opts: { cameraFails?: boolean } = {}) {
       },
     },
   });
-  const actor = createActor(machine, { input: { config } });
+  const actor = createActor(machine, { input: { config, online: opts.online } });
   actor.start();
   const state = () => actor.getSnapshot();
   const send = (e: FlowEvent) => actor.send(e);
@@ -375,5 +406,110 @@ describe('flow machine', () => {
     h.send({ type: 'BACK' });
     expect(h.state().value).toBe('cover');
     expect(h.state().context.config.configVersion).toBe(7);
+  });
+});
+
+describe('F4: payment methods + offline', () => {
+  const allMethods = (c: BoothConfig) => {
+    c.flow.paymentMethods = ['qris', 'voucher', 'cash'];
+  };
+  async function toPayment(h: Harness) {
+    h.send({ type: 'START' });
+    h.send({ type: 'NEXT' });
+    h.send({ type: 'NEXT' });
+    await h.tick(0);
+  }
+  const typeCode = (h: Harness, code: string) => {
+    for (const key of code) h.send({ type: 'VOUCHER.KEY', key });
+  };
+
+  it('offline: no QRIS is created; it is created when the network returns', async () => {
+    const h = start(makeConfig(allMethods), { online: false });
+    await toPayment(h);
+    expect(h.state().matches({ payment: 'awaiting' })).toBe(true);
+    expect(h.calls.payments).toBe(0);
+    h.send({ type: 'NETWORK.ONLINE' });
+    await h.tick(0);
+    expect(h.calls.payments).toBe(1);
+    expect(h.state().context.session?.qrString).toBe(
+      `QR-${h.state().context.config.pricing.basePrice}`,
+    );
+  });
+
+  it('an offline error while creating keeps the buyer on Payment (no Error page)', async () => {
+    const h = start(makeConfig(allMethods), { paymentOffline: true });
+    await toPayment(h);
+    expect(h.state().matches({ payment: 'awaiting' })).toBe(true);
+    expect(h.state().context.online).toBe(false);
+  });
+
+  it('voucher: wrong code shows the reason, a valid code pays and cancels the pending QRIS', async () => {
+    const h = start(makeConfig(allMethods), {
+      voucher: (code) =>
+        code === '123456789012' ? { ok: true, offline: true } : { ok: false, reason: 'used' },
+    });
+    await toPayment(h);
+    const qrPayment = h.state().context.session!.paymentId;
+    typeCode(h, '1111');
+    h.send({ type: 'VOUCHER.SUBMIT' }); // incomplete: ignored
+    expect(h.calls.vouchers).toEqual([]);
+    typeCode(h, '22223333');
+    h.send({ type: 'VOUCHER.SUBMIT' });
+    await h.tick(0);
+    expect(h.state().context.voucher).toEqual({ code: '', status: 'used' });
+    typeCode(h, '1234567890129'); // 13th digit ignored
+    h.send({ type: 'VOUCHER.BACKSPACE' });
+    typeCode(h, '2');
+    h.send({ type: 'VOUCHER.SUBMIT' });
+    await h.tick(0);
+    expect(h.state().matches('capture')).toBe(true);
+    expect(h.state().context.session).toMatchObject({
+      paid: true,
+      paymentMethod: 'voucher',
+      qrString: null,
+    });
+    expect(h.calls.cancelled).toEqual([qrPayment]);
+  });
+
+  it('cash: selecting cash waits for the operator; approval pays and cancels the QRIS', async () => {
+    const h = start(makeConfig(allMethods));
+    await toPayment(h);
+    const qrPayment = h.state().context.session!.paymentId;
+    h.send({ type: 'SELECT_PAYMENT', method: 'cash' });
+    expect(h.state().matches({ payment: 'cash' })).toBe(true);
+    h.send({ type: 'CASH.CANCEL' });
+    expect(h.state().matches({ payment: 'awaiting' })).toBe(true);
+    h.send({ type: 'SELECT_PAYMENT', method: 'cash' });
+    h.send({ type: 'PAYMENT.PAID', method: 'cash' });
+    await h.tick(0);
+    expect(h.state().matches('capture')).toBe(true);
+    expect(h.state().context.session).toMatchObject({ paid: true, paymentMethod: 'cash' });
+    expect(h.calls.cancelled).toEqual([qrPayment]);
+  });
+
+  it('cash approval is ignored when cash is not enabled', async () => {
+    const h = start(
+      makeConfig((c) => {
+        c.flow.paymentMethods = ['qris', 'voucher'];
+      }),
+    );
+    await toPayment(h);
+    h.send({ type: 'PAYMENT.PAID', method: 'cash' });
+    expect(h.state().matches('payment')).toBe(true);
+  });
+
+  it('event mode skips Payment entirely (free session)', async () => {
+    const h = start(
+      makeConfig((c) => {
+        c.flow.eventMode = true;
+      }),
+    );
+    h.send({ type: 'START' });
+    h.send({ type: 'NEXT' });
+    h.send({ type: 'NEXT' });
+    await h.tick(0);
+    expect(h.state().matches('capture')).toBe(true);
+    expect(h.state().context.session).toMatchObject({ paid: true, paymentMethod: 'free' });
+    expect(h.calls.payments).toBe(0);
   });
 });
