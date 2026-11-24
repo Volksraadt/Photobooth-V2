@@ -7,6 +7,7 @@ import {
   recordCashApproval,
   recordDeviceOutbox,
   recordHeartbeat,
+  resolveEntitlements,
   redeemVoucher,
   syncDeviceSession,
   type Db,
@@ -19,6 +20,23 @@ import { deviceAuth } from '../middleware/device-auth';
 import { deviceOutputRoutes } from './output-routes';
 import { devicePaymentRoutes } from './payment-routes';
 import type { AppEnv } from '../types';
+
+/**
+ * The plan flags a booth device needs (nothing about money): what the Kiosk/agent may offer.
+ * Booths are never switched off for billing: after the grace period the flags are Starter's.
+ */
+function deviceEntitlements(e: Awaited<ReturnType<typeof resolveEntitlements>>) {
+  if (!e) return null;
+  return {
+    planCode: e.planCode,
+    state: e.state,
+    watermark: !e.features.watermarkRemoval,
+    video: e.features.video,
+    liveClip: e.features.liveClip,
+    dslr: e.features.dslr,
+    maxFrames: e.limits.maxFrames,
+  };
+}
 
 const PairStartBody = z.object({
   /** sha256 hex of the token the kiosk generated (never the token itself). */
@@ -37,6 +55,8 @@ const HeartbeatBody = z.object({
   platform: z.string().max(100).nullable().optional(),
   cameraStatus: z.enum(['ok', 'error', 'disconnected', 'unknown']).optional(),
   printerStatus: z.enum(['ok', 'warning', 'error', 'disconnected', 'unknown']).optional(),
+  outboxPending: z.number().int().min(0).max(1_000_000).optional(),
+  uploadsPending: z.number().int().min(0).max(1_000_000).optional(),
 });
 
 const OutboxId = z.string().regex(/^[a-z0-9]{8,64}$/);
@@ -203,7 +223,16 @@ export function deviceRoutes() {
     c.header('ETag', etag);
     c.header('Cache-Control', 'no-cache');
     if (c.req.header('if-none-match') === etag) return c.body(null, 304);
-    return c.json({ id: active.id, version: active.version, config: active.config });
+    return c.json({
+      id: active.id,
+      version: active.version,
+      config: active.config,
+      // Informational copy; the live value rides on every heartbeat response (the ETag stays the
+      // config id so a plan change never makes the device reload an unchanged config).
+      entitlements: deviceEntitlements(
+        await resolveEntitlements(c.var.deps.db, c.var.device.orgId),
+      ),
+    });
   });
 
   /** Server-sent events: `config` whenever the booth publishes. Keep-alive every 20 s. */
@@ -263,7 +292,13 @@ export function deviceRoutes() {
     const body = HeartbeatBody.safeParse(await c.req.json().catch(() => null));
     if (!body.success) return c.json({ error: 'invalid_body' }, 400);
     await recordHeartbeat(c.var.deps.db, c.var.device, body.data);
-    return c.json({ ok: true, time: new Date().toISOString() });
+    return c.json({
+      ok: true,
+      time: new Date().toISOString(),
+      entitlements: deviceEntitlements(
+        await resolveEntitlements(c.var.deps.db, c.var.device.orgId),
+      ),
+    });
   });
 
   app.post('/events', async (c) => {

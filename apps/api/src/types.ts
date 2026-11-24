@@ -2,6 +2,7 @@ import type { SecretBox, UserClaims, UserTokenVerifier } from '@pb/crypto';
 import type { BoothConfigEvents, Db } from '@pb/db';
 import type { AccessTokenCache, GoogleOAuth } from '@pb/drive';
 import type { ObjectStorage } from '@pb/storage';
+import type { BillingGateway } from './billing/gateway';
 import type { PaymentGateway } from './payments/gateway';
 import type { DeviceSignals } from './payments/device-signals';
 
@@ -31,6 +32,10 @@ export type AppDeps = {
   jobs?: JobWaker;
   /** Where the OAuth callback sends the browser back to (Studio). */
   studioUrl?: string;
+  /** F6: the platform's own Midtrans account for subscription invoices (never the owners'). */
+  billing?: BillingGateway;
+  /** F6: e-mails (any case) of platform admins. */
+  platformAdmins?: string[];
 };
 
 export type ResolvedDeps = Required<AppDeps>;

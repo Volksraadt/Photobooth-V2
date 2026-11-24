@@ -16,6 +16,7 @@ import { eq } from 'drizzle-orm';
 import { Hono } from 'hono';
 import { z } from 'zod';
 import { requireOrgEditor } from '../middleware/org-access';
+import { studioBillingRoutes } from './billing-routes';
 import { studioDriveRoutes } from './drive-routes';
 import { userAuth } from '../middleware/user-auth';
 import { encryptCredential } from '../payments/gateway';
@@ -33,6 +34,7 @@ export function studioRoutes() {
   const app = new Hono<AppEnv>();
   app.use('*', userAuth);
   app.route('/', studioDriveRoutes());
+  app.route('/', studioBillingRoutes());
 
   app.get('/me', async (c) => {
     const user = c.var.user;

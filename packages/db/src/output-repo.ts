@@ -1,13 +1,12 @@
+import { resolveEntitlements } from './billing-repo';
 import type { BoothConfig } from '@pb/schema';
-import { and, desc, eq, inArray, lt, sql } from 'drizzle-orm';
+import { and, eq, inArray, lt, sql } from 'drizzle-orm';
 import {
   boothConfigs,
   booths,
   driveConnections,
-  plans,
   sessionOutputs,
   sessions,
-  subscriptions,
   uploadJobs,
 } from './schema';
 import type { PlanFeatures } from './schema/orgs';
@@ -408,17 +407,11 @@ export async function getPublishedConfig(
   return (row?.config as BoothConfig | undefined) ?? null;
 }
 
-/** Features of the org's current plan; unknown/no subscription = no premium features. */
+/** Features the org is entitled to now (Starter's after the grace period); none if unknown. */
 export async function getOrgPlanFeatures(db: DbOrTx, orgId: string): Promise<PlanFeatures> {
-  const [row] = await db
-    .select({ features: plans.features })
-    .from(subscriptions)
-    .innerJoin(plans, eq(plans.id, subscriptions.planId))
-    .where(eq(subscriptions.orgId, orgId))
-    .orderBy(desc(subscriptions.currentPeriodStart))
-    .limit(1);
+  const e = await resolveEntitlements(db, orgId);
   return (
-    row?.features ?? {
+    e?.features ?? {
       dslr: false,
       liveClip: false,
       video: false,

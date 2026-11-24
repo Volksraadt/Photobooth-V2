@@ -98,7 +98,9 @@ export class Telemetry {
   async beat(): Promise<void> {
     if (!this.api.hasToken) return;
     try {
-      await this.api.heartbeat(this.snapshot());
+      const entitlements = await this.api.heartbeat(this.snapshot());
+      // Plan flags for offline starts and the admin screen; never blocks the booth.
+      if (entitlements) this.store.setMeta('entitlements', JSON.stringify(entitlements));
       this.setOnline(true);
       void this.flush();
     } catch (err) {

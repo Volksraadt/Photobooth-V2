@@ -99,6 +99,12 @@ export const devices = pgTable(
     cameraStatus: deviceComponentStatus('camera_status').notNull().default('unknown'),
     printerStatus: deviceComponentStatus('printer_status').notNull().default('unknown'),
     revokedAt: tz('revoked_at'),
+    /** Reported by the agent heartbeat: items still waiting to reach the API (unsynced data). */
+    outboxPending: integer('outbox_pending'),
+    uploadsPending: integer('uploads_pending'),
+    /** Owner-entered: sheets per paper/ribbon roll; the counter restarts at paper_loaded_at. */
+    paperCapacity: integer('paper_capacity'),
+    paperLoadedAt: tz('paper_loaded_at'),
     ...timestamps,
   },
   (t) => [index('devices_org_idx').on(t.orgId), index('devices_booth_idx').on(t.boothId)],

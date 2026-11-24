@@ -1,7 +1,7 @@
 import { existsSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { secretBoxFromEnv, type SecretBox } from '@pb/crypto';
-import { getDb, SESSION_QUEUE } from '@pb/db';
+import { getDb, refreshDailyBoothStats, runBillingLifecycle, SESSION_QUEUE } from '@pb/db';
 import { AccessTokenCache, GoogleOAuth, googleConfigFromEnv } from '@pb/drive';
 import { storageFromEnv } from '@pb/storage';
 import { Worker } from 'bullmq';
@@ -81,11 +81,32 @@ const purge = setInterval(
   60 * 60_000,
 );
 
+// F6: daily sales view (refreshed every minute: "today" is read live, so lag only affects
+// finished days) and the subscription lifecycle (past due → grace → downgrade, renewal invoices).
+const db = getDb();
+const refreshStats = () =>
+  refreshDailyBoothStats(db).catch((err) => console.error('[worker] stats refresh failed', err));
+const lifecycle = () =>
+  runBillingLifecycle(db)
+    .then((r) => {
+      if (r.pastDue || r.downgraded || r.renewalInvoices)
+        console.log(
+          `[worker] billing: ${r.pastDue} past due, ${r.downgraded} downgraded, ${r.renewalInvoices} renewal invoices`,
+        );
+    })
+    .catch((err) => console.error('[worker] billing lifecycle failed', err));
+void refreshStats();
+void lifecycle();
+const statsTimer = setInterval(() => void refreshStats(), 60_000);
+const lifecycleTimer = setInterval(() => void lifecycle(), 60 * 60_000);
+
 for (const sig of ['SIGINT', 'SIGTERM'] as const) {
   process.on(sig, () => {
     runner.stop();
     clearInterval(timer);
     clearInterval(purge);
+    clearInterval(statsTimer);
+    clearInterval(lifecycleTimer);
     void bull?.close().finally(() => process.exit(0));
     setTimeout(() => process.exit(0), 2000).unref();
   });

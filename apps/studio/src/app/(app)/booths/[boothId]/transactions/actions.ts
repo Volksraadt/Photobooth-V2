@@ -21,5 +21,7 @@ export async function retryUploadAction(_prev: FormState, form: FormData): Promi
   const body = (await res.json().catch(() => ({}))) as { message?: string };
   if (!res.ok) return { status: 'error', message: body.message ?? `Gagal (HTTP ${res.status}).` };
   revalidatePath('/booths/[boothId]/transactions', 'page');
+  revalidatePath('/transactions');
+  revalidatePath('/devices');
   return { status: 'info', message: 'Upload dijadwalkan ulang.' };
 }

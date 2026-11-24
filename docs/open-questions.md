@@ -38,3 +38,10 @@
 | 34 | Supabase Storage untuk `PB_STORAGE=supabase` (bucket privat `sessions`, kunci service role) belum diuji ke proyek nyata (lihat #12, #18) | Kode REST siap + sama dengan driver disk di balik `ObjectStorage`; diuji dengan `disk`/`memory` | Sebelum deploy |
 | 35 | Latar video bertipe video (`output.video.backgroundAssetId` kind `video`) dan durasi musik yang lebih pendek dari video | Latar video → latar hitam; musik di-pad hening dan di-fade-out | F7 |
 | 36 | Domain short link dan custom domain QR (Business) | `PB_SHORT_LINK_BASE` default = URL API; Kiosk `VITE_SHORT_LINK_BASE`. Domain final bergantung #1 | Sebelum launch |
+| 37 | Uji akun Midtrans **platform** sungguhan (charge QRIS langganan + webhook `/webhooks/billing` lewat tunnel) | Kode + test dengan provider tiruan dan `fetch` tiruan (header Authorization terbukti memakai kunci platform); langkah di `docs/testing/F6-manual.md` §0 dan §4. Butuh akun Midtrans milik platform | Sebelum langganan dipakai owner |
+| 38 | Perpanjangan otomatis (auto-debit/kartu tersimpan) | Tidak ada: QRIS dibayar manual tiap bulan lewat invoice yang dibuat 3 hari sebelum jatuh tempo; masa tenggang 7 hari. Opsi: Snap + kartu/virtual account berulang | Setelah MVP |
+| 39 | Pengingat telat bayar lewat e-mail/WhatsApp | Hanya banner di Studio (notifikasi = F7) | F7 |
+| 40 | Booth/perangkat melebihi batas setelah turun ke Starter | Tetap berjalan, hanya pembuatan baru yang dibatasi. Opsi: tandai booth kelebihan sebagai nonaktif setelah event | Sebelum launch |
+| 41 | Admin platform lewat tabel/peran (bukan daftar e-mail di env) | `PB_PLATFORM_ADMINS` (e-mail); cukup untuk tim kecil | Sebelum ada tim dukungan |
+| 42 | Refund/kredit pembayaran langganan (salah bayar, downgrade di tengah periode) | Manual: admin mengubah paket/periode (`subscription.admin_set`) dan refund dari dashboard Midtrans platform; tanpa proration | Sebelum launch |
+| 43 | Rekap: batas 20.000 baris ekspor dan view yang disegarkan tiap menit untuk skala besar | Cukup untuk MVP (puluhan ribu sesi); untuk skala besar pindah ke ekspor async dan refresh bertahap | Setelah MVP |

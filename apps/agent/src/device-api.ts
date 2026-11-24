@@ -69,12 +69,26 @@ async function apiError(res: Response): Promise<DeviceApiError> {
   return err;
 }
 
+/** Plan flags of the org (no money): what this booth may offer. Booths are never switched off. */
+export type DeviceEntitlements = {
+  planCode: string;
+  state: 'trial' | 'active' | 'grace' | 'downgraded';
+  watermark: boolean;
+  video: boolean;
+  liveClip: boolean;
+  dslr: boolean;
+  maxFrames: number | null;
+};
+
 export type HeartbeatBody = {
   configVersion: number | null;
   appVersion: string;
   platform: string;
   cameraStatus: 'ok' | 'error' | 'disconnected' | 'unknown';
   printerStatus: 'ok' | 'warning' | 'error' | 'disconnected' | 'unknown';
+  /** Outbox items + sessions still waiting to be uploaded (unsynced data indicator). */
+  outboxPending?: number;
+  uploadsPending?: number;
 };
 
 export type OutboxBatch = {
@@ -315,12 +329,17 @@ export class DeviceApi {
     if (!res.ok) throw await apiError(res);
   }
 
-  async heartbeat(body: HeartbeatBody): Promise<void> {
+  /** Returns the plan flags the API sends back (null from an older API). */
+  async heartbeat(body: HeartbeatBody): Promise<DeviceEntitlements | null> {
     const res = await this.request('/device/heartbeat', {
       method: 'POST',
       body: JSON.stringify(body),
     });
     if (!res.ok) throw new DeviceApiError(res.status, `Heartbeat ditolak (HTTP ${res.status})`);
+    const json = (await res.json().catch(() => null)) as {
+      entitlements?: DeviceEntitlements | null;
+    } | null;
+    return json?.entitlements ?? null;
   }
 
   /** Delivers outbox items; returns the ids the API stored (idempotent by id). */

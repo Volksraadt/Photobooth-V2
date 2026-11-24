@@ -7,7 +7,7 @@ import { WebSocketServer, type WebSocket } from 'ws';
 import { AssetStore } from './assets';
 import { CameraHub } from './camera-hub';
 import { ConfigSync } from './config-sync';
-import type { HeartbeatBody } from './device-api';
+import type { DeviceEntitlements, HeartbeatBody } from './device-api';
 import { createLanApi } from './lan-api';
 import { createLocalApi } from './local-api';
 import { AGENT_VERSION, type AgentOptions } from './options';
@@ -133,7 +133,23 @@ export class Agent {
       platform: `${process.platform}-${process.arch}`,
       cameraStatus,
       printerStatus: this.printer.status.status,
+      // Only business data counts as "unsynced" (sessions, voucher use, cash), not log events.
+      outboxPending: (() => {
+        const k = this.store.pendingOutboxByKind();
+        return (k.session ?? 0) + (k.voucher_use ?? 0) + (k.cash_approval ?? 0);
+      })(),
+      uploadsPending: this.store.uploadSummary().pending,
     };
+  }
+
+  /** Last plan flags from the API (kept for offline starts); null before the first heartbeat. */
+  entitlements(): DeviceEntitlements | null {
+    const raw = this.store.getMeta('entitlements');
+    try {
+      return raw ? (JSON.parse(raw) as DeviceEntitlements) : null;
+    } catch {
+      return null;
+    }
   }
 
   settings() {
@@ -155,6 +171,7 @@ export class Agent {
       outboxPending: this.store.outboxCount(),
       outboxByKind: this.store.pendingOutboxByKind(),
       uploads: this.store.uploadSummary(),
+      entitlements: this.entitlements(),
       vouchers: (() => {
         const boothId = cs.status === 'ready' ? cs.config.boothId : null;
         return boothId ? this.store.voucherCount(boothId) : 0;

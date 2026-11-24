@@ -216,7 +216,8 @@ export async function processSession(deps: WorkerDeps, sessionId: string): Promi
 
   // 5. video/
   const v = config.output.video;
-  if (v.enabled && filteredForMedia.length > 0) {
+  // Video is a Pro/Business feature (PRD §11); a lapsed plan simply gets no video.
+  if (v.enabled && features.video && filteredForMedia.length > 0) {
     const name = `${code}.mp4`;
     if (!have('video', name)) {
       const picked = pickVideoPhotos(

@@ -1,13 +1,16 @@
-import { payments } from '@pb/db';
+import { getInvoice, invoiceOrderId, payments } from '@pb/db';
 import { eq, sql } from 'drizzle-orm';
 import { Hono } from 'hono';
 import { cors } from 'hono/cors';
 import { HTTPException } from 'hono/http-exception';
 import { AccessTokenCache } from '@pb/drive';
 import { MemoryStorage } from '@pb/storage';
+import { DISABLED_BILLING } from './billing/gateway';
 import { DeviceSignals } from './payments/device-signals';
 import { createPaymentGateway } from './payments/gateway';
 import { deviceRoutes, pairRoutes } from './routes/device-routes';
+import { adminRoutes } from './routes/admin-routes';
+import { billingWebhookRoutes } from './routes/billing-webhook-routes';
 import { googleOAuthRoutes } from './routes/drive-routes';
 import { shortLinkRoutes } from './routes/short-link-routes';
 import { studioRoutes } from './routes/studio-routes';
@@ -31,6 +34,8 @@ export function createApp(input: AppDeps) {
     driveTokens: input.driveTokens ?? new AccessTokenCache(),
     jobs: input.jobs ?? { wake: async () => undefined },
     studioUrl: input.studioUrl ?? 'http://localhost:3000',
+    billing: input.billing ?? DISABLED_BILLING,
+    platformAdmins: (input.platformAdmins ?? []).map((e) => e.trim().toLowerCase()),
   };
   const app = new Hono<AppEnv>();
 
@@ -82,6 +87,8 @@ export function createApp(input: AppDeps) {
   app.route('/device', deviceRoutes());
   app.route('/studio', studioRoutes());
   app.route('/webhooks', webhookRoutes());
+  app.route('/webhooks', billingWebhookRoutes());
+  app.route('/admin', adminRoutes());
   app.route('/oauth/google', googleOAuthRoutes());
   app.route('/s', shortLinkRoutes());
 
@@ -98,6 +105,22 @@ export function createApp(input: AppDeps) {
       if (!mock) return c.json({ error: 'not_mock' }, 400);
       const notification = mock.simulatePaid(p.orderId);
       const res = await app.request(`/webhooks/midtrans/${p.orgId}`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify(notification),
+      });
+      return c.json({ webhookStatus: res.status }, res.ok ? 200 : 502);
+    });
+  }
+
+  // Dev only (PB_BILLING_PROVIDER=mock): "the owner paid the invoice", through the real webhook.
+  if (deps.billing.mode === 'mock' && process.env.NODE_ENV !== 'production') {
+    app.post('/dev/billing/invoices/:id/simulate-paid', async (c) => {
+      const invoice = await getInvoice(deps.db, c.req.param('id'));
+      if (!invoice || !invoice.attempts) return c.json({ error: 'not_charged' }, 404);
+      const orderId = invoiceOrderId(invoice.id, invoice.attempts);
+      const notification = deps.billing.mock!.simulatePaid(orderId);
+      const res = await app.request('/webhooks/billing', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify(notification),

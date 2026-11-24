@@ -7,6 +7,7 @@ import { AccessTokenCache, GoogleOAuth, googleConfigFromEnv } from '@pb/drive';
 import { storageFromEnv } from '@pb/storage';
 import { Queue } from 'bullmq';
 import { createApp, createPaymentGateway } from './app';
+import { billingGatewayFromEnv } from './billing/gateway';
 import type { JobWaker } from './types';
 import { userTokenVerifierFromEnv } from './config';
 
@@ -21,6 +22,7 @@ if (paymentMode === 'mock' && process.env.NODE_ENV === 'production') {
   throw new Error('PB_PAYMENT_PROVIDER=mock is not allowed in production');
 }
 const googleConfig = googleConfigFromEnv();
+const billing = billingGatewayFromEnv();
 const storage = storageFromEnv();
 const app = createApp({
   db: getDb(),
@@ -34,9 +36,17 @@ const app = createApp({
   driveTokens: new AccessTokenCache(),
   jobs: createJobWaker(),
   studioUrl: process.env.PB_STUDIO_URL ?? 'http://localhost:3000',
+  billing,
+  platformAdmins: (process.env.PB_PLATFORM_ADMINS ?? '')
+    .split(',')
+    .map((e) => e.trim())
+    .filter(Boolean),
 });
 console.log(
   `[api] drive: ${googleConfig ? 'configured' : 'not configured (set GOOGLE_CLIENT_ID/SECRET)'}, storage: ${storage.kind}, queue: ${process.env.REDIS_URL ? 'bullmq' : 'db polling'}`,
+);
+console.log(
+  `[api] subscription billing: ${billing.mode}${billing.mode === 'disabled' ? ' (set PB_BILLING_MIDTRANS_SERVER_KEY of the PLATFORM Midtrans account)' : ` (${billing.env})`}`,
 );
 console.log(
   `[api] payments: ${paymentMode}${secretBox ? '' : ' (SECRET_MASTER_KEY missing: credentials cannot be saved)'}`,

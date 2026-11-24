@@ -32,7 +32,8 @@ export const PLAN_SEEDS: PlanSeed[] = [
   {
     code: 'starter',
     name: 'Starter',
-    limits: { maxBooths: 1, maxDevicesPerBooth: 1, maxFrames: 5 },
+    // Starter keeps 30 days of recap (PRD §11).
+    limits: { maxBooths: 1, maxDevicesPerBooth: 1, maxFrames: 5, recapDays: 30 },
     features: {
       dslr: false,
       liveClip: false,

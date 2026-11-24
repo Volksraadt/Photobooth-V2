@@ -31,6 +31,8 @@ export type PlanLimits = {
   maxBooths: number | null;
   maxDevicesPerBooth: number | null;
   maxFrames: number | null;
+  /** How many days of sales history the recap shows. undefined/null = unlimited. */
+  recapDays?: number | null;
 };
 
 export type PlanFeatures = {
@@ -114,7 +116,24 @@ export const billingInvoices = pgTable(
     status: invoiceStatus('status').notNull(),
     providerRef: text('provider_ref'),
     paidAt: tz('paid_at'),
+    /** Plan this invoice buys (upgrade) or renews. */
+    planId: text('plan_id').references(() => plans.id),
+    /** 'upgrade' (immediate plan change) | 'renewal' (next period of the current plan). */
+    kind: text('kind').notNull().default('renewal'),
+    periodStart: tz('period_start'),
+    periodEnd: tz('period_end'),
+    dueAt: tz('due_at'),
+    /** Charge attempts; the provider order id is `<invoice id>-<attempts>`. */
+    attempts: integer('attempts').notNull().default(0),
+    qrString: text('qr_string'),
+    qrExpiresAt: tz('qr_expires_at'),
+    /** Platform Midtrans env used for the charge. */
+    env: text('env'),
+    lastCheckedAt: tz('last_checked_at'),
     ...timestamps,
   },
-  (t) => [index('billing_invoices_org_idx').on(t.orgId)],
+  (t) => [
+    index('billing_invoices_org_idx').on(t.orgId),
+    index('billing_invoices_status_idx').on(t.status),
+  ],
 );

@@ -9,8 +9,7 @@ import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { formatInZone } from '@/lib/timezones';
 import { asUser, requireOrg } from '@/lib/org';
-import { uploadState } from '@/lib/upload-status';
-import { RetryUploadButton } from './retry-button';
+import { UploadCell } from '@/components/session-upload';
 
 const METHOD: Record<string, string> = {
   qris: 'QRIS',
@@ -116,7 +115,15 @@ export default async function TransactionsPage({
               <tbody className="divide-y">
                 {sessions.map((s) => (
                   <tr key={s.id} data-testid={`session-${s.code}`}>
-                    <td className="py-1 font-mono">{s.code}</td>
+                    <td className="py-1 font-mono">
+                      <Link
+                        href={`/transactions/${s.id}`}
+                        className="underline"
+                        data-testid={`session-link-${s.code}`}
+                      >
+                        {s.code}
+                      </Link>
+                    </td>
                     <td>{formatInZone(s.startedAt, tz)}</td>
                     <td>
                       {s.paymentMethod ? METHOD[s.paymentMethod] : '—'}
@@ -140,39 +147,6 @@ export default async function TransactionsPage({
           )}
         </CardContent>
       </Card>
-    </div>
-  );
-}
-
-function UploadCell({
-  session,
-  jobs,
-}: {
-  session: Parameters<typeof uploadState>[0] & { id: string; code: string };
-  jobs: Parameters<typeof uploadState>[1];
-}) {
-  const u = uploadState(session, jobs);
-  const tone =
-    u.kind === 'done'
-      ? 'text-emerald-700'
-      : u.kind === 'failed'
-        ? 'text-destructive'
-        : u.kind === 'retrying'
-          ? 'text-amber-700'
-          : 'text-muted-foreground';
-  return (
-    <div className="space-y-1">
-      <div className={tone}>
-        {u.driveUrl ? (
-          <a className="underline" href={u.driveUrl} target="_blank" rel="noreferrer">
-            {u.label}
-          </a>
-        ) : (
-          u.label
-        )}
-      </div>
-      {u.detail && <div className="max-w-xs text-xs text-muted-foreground">{u.detail}</div>}
-      {u.canRetry && <RetryUploadButton sessionId={session.id} code={session.code} />}
     </div>
   );
 }

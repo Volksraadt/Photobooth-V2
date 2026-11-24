@@ -159,6 +159,9 @@ export async function recordHeartbeat(
     platform?: string | null;
     cameraStatus?: 'ok' | 'error' | 'disconnected' | 'unknown';
     printerStatus?: 'ok' | 'warning' | 'error' | 'disconnected' | 'unknown';
+    /** Items the agent still has to deliver (F6: "data belum tersinkron"). */
+    outboxPending?: number;
+    uploadsPending?: number;
   },
 ) {
   await db
@@ -170,6 +173,8 @@ export async function recordHeartbeat(
       ...(input.platform ? { platform: input.platform } : {}),
       ...(input.cameraStatus ? { cameraStatus: input.cameraStatus } : {}),
       ...(input.printerStatus ? { printerStatus: input.printerStatus } : {}),
+      ...(input.outboxPending !== undefined ? { outboxPending: input.outboxPending } : {}),
+      ...(input.uploadsPending !== undefined ? { uploadsPending: input.uploadsPending } : {}),
     })
     .where(and(eq(devices.id, device.id), eq(devices.orgId, device.orgId)));
 }

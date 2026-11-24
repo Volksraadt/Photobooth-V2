@@ -364,6 +364,14 @@ Rekap dihitung dari `sessions` + `payments` + `print_jobs`. Untuk performa, buat
 - `drive_connections` (satu baris per org, tanpa RLS untuk Studio): tambah `root_folder_name`, `last_error` (pesan untuk owner, tanpa token), `connected_by`. `encrypted_refresh_token` = SecretBox, AAD `org:<orgId>:drive`. `status`: `ok` | `failed` | `revoked` | `untested`.
 - Struktur Drive: `<root_folder_id>/<config.output.driveRootFolderName | nama booth>/<YYYY-MM-DD zona booth>/<KODE>/<original|mirrored|filtered|composite|gif|video>/`. Nama file: `original/<KODE>-fotoN.jpg`, `mirrored/<KODE>-fotoN-mirror.jpg`, `filtered/<KODE>-fotoN-filter.jpg`, `composite/<KODE>-strip.jpg`, `gif/<KODE>.gif`, `video/<KODE>.mp4`.
 
+### B.11 Ketetapan F6 (migrasi `0005_f6_reports_billing.sql`)
+- `billing_invoices`: tambah `plan_id` (paket yang dibeli/diperpanjang), `kind` (`upgrade` = ganti paket / pembelian pertama setelah trial, periode mulai saat dibayar; `renewal` = periode berikutnya paket yang sama, mulai di akhir periode lama), `period_start/period_end`, `due_at`, `attempts` (order id penyedia = `<invoice id>-<attempts>`), `qr_string`, `qr_expires_at`, `env` (env Midtrans platform), `last_checked_at`. `status`: `pending` → `paid` | `void` (diganti pilihan lain, dilunasi invoice lain, atau paket diturunkan/diubah admin). Hanya satu invoice `pending` per org yang relevan; checkout membatalkan yang lain.
+- `subscriptions`: satu baris per org, diubah di tempat. `status`: `trialing` → (periode habis) `past_due` + `grace_until` → (masa tenggang habis) paket Starter `active`; `active` setelah dibayar. Hak akses efektif dihitung dari jam (`resolveEntitlements`), kolom status hanya catatan terakhir siklus.
+- `plans.limits.recapDays` (opsional): hari riwayat rekap; Starter 30. `plans.price_monthly` diisi admin platform (seed tetap `null`).
+- `devices`: tambah `outbox_pending`, `uploads_pending` (dari heartbeat), `paper_capacity`, `paper_loaded_at`.
+- View `daily_booth_stats` (materialized): `org_id, booth_id, day (tanggal zona booth), sessions, gross, fee, net, extra_prints, offline_sessions, {qris,voucher,cash}_{sessions,gross}, free_sessions` untuk `sessions.payment_method IS NOT NULL`. Indeks unik `(booth_id, day)`; akses langsung ditutup; Studio memakai `daily_booth_stats_v` (lihat decisions F6).
+- Sumber agregasi rekap: `getReport()` (`packages/db/src/report-repo.ts`): hari < hari ini booth dari view, hari ini dan filter perangkat dari `sessions`; jam/frame/filter/lembar cetak selalu dari `sessions`/`print_jobs` dengan zona booth.
+
 ---
 
 ## C. Penyimpanan lokal (Agent, SQLite)

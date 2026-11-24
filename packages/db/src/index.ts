@@ -8,3 +8,5 @@ export * from './device-repo';
 export * from './notify';
 export * from './payment-repo';
 export * from './output-repo';
+export * from './billing-repo';
+export * from './report-repo';

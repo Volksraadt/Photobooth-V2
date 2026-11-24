@@ -13,12 +13,19 @@ export type OrgSummary = {
   id: string;
   name: string;
   slug: string;
+  timezone: string;
   role: 'owner' | 'manager' | 'operator';
 };
 
 export async function listMyOrgs(tx: Tx): Promise<OrgSummary[]> {
   return tx
-    .select({ id: orgs.id, name: orgs.name, slug: orgs.slug, role: orgMembers.role })
+    .select({
+      id: orgs.id,
+      name: orgs.name,
+      slug: orgs.slug,
+      timezone: orgs.timezone,
+      role: orgMembers.role,
+    })
     .from(orgs)
     .innerJoin(
       orgMembers,

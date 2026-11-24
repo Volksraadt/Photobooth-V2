@@ -1,3 +1,4 @@
+import { resolveEntitlements } from './billing-repo';
 import { createId } from '@paralleldrive/cuid2';
 import {
   createDefaultBoothConfig,
@@ -13,8 +14,6 @@ import {
   boothDrafts,
   booths,
   devices,
-  plans,
-  subscriptions,
   templates,
   type PlanLimits,
 } from './schema';
@@ -40,14 +39,9 @@ export type OrgPlan = { code: string; name: string; limits: PlanLimits };
 
 /** Plan of the org's current subscription (latest one). */
 export async function getOrgPlan(tx: Tx, orgId: string): Promise<OrgPlan | null> {
-  const [row] = await tx
-    .select({ code: plans.code, name: plans.name, limits: plans.limits })
-    .from(subscriptions)
-    .innerJoin(plans, eq(plans.id, subscriptions.planId))
-    .where(eq(subscriptions.orgId, orgId))
-    .orderBy(desc(subscriptions.currentPeriodEnd))
-    .limit(1);
-  return row ?? null;
+  // Effective plan: a lapsed subscription keeps its limits for the grace period, then Starter.
+  const e = await resolveEntitlements(tx, orgId);
+  return e ? { code: e.planCode, name: e.planName, limits: e.limits } : null;
 }
 
 // --- Templates & booth creation --------------------------------------------------------------
