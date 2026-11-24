@@ -13,8 +13,10 @@ import {
   type CredentialRow,
 } from '@pb/db';
 import { eq } from 'drizzle-orm';
-import { Hono, type Context } from 'hono';
+import { Hono } from 'hono';
 import { z } from 'zod';
+import { requireOrgEditor } from '../middleware/org-access';
+import { studioDriveRoutes } from './drive-routes';
 import { userAuth } from '../middleware/user-auth';
 import { encryptCredential } from '../payments/gateway';
 import type { AppEnv } from '../types';
@@ -30,6 +32,7 @@ const ClaimBody = z.object({
 export function studioRoutes() {
   const app = new Hono<AppEnv>();
   app.use('*', userAuth);
+  app.route('/', studioDriveRoutes());
 
   app.get('/me', async (c) => {
     const user = c.var.user;
@@ -87,20 +90,6 @@ export function studioRoutes() {
   });
 
   // --- Midtrans integration (credentials are write-only from Studio's point of view) ---
-
-  const requireOrgEditor = async (c: Context<AppEnv>, orgId: string) => {
-    const org = await withUserContext(c.var.deps.db, c.var.user.userId, async (tx) =>
-      (await listMyOrgs(tx)).find((o) => o.id === orgId),
-    );
-    if (!org) return c.json({ error: 'not_found', message: 'Organisasi tidak ditemukan.' }, 404);
-    if (org.role === 'operator') {
-      return c.json(
-        { error: 'forbidden', message: 'Hanya owner/manager yang dapat mengatur integrasi.' },
-        403,
-      );
-    }
-    return null;
-  };
 
   const credentialView = (r: CredentialRow) => ({
     env: r.env,

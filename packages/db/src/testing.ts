@@ -7,7 +7,7 @@ import * as schema from './schema';
 import { createShimUser } from './seed';
 import type { Db } from './types';
 
-export { seedPlans, seedTemplates } from './seed';
+export { seed, seedPlans, seedTemplates } from './seed';
 
 /** In-memory Postgres (PGlite) with the auth shim + all migrations applied. */
 export async function createTestDb(): Promise<{

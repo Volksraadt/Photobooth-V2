@@ -1,4 +1,13 @@
-import { index, integer, jsonb, pgEnum, pgTable, text, uuid } from 'drizzle-orm/pg-core';
+import {
+  index,
+  integer,
+  jsonb,
+  pgEnum,
+  pgTable,
+  text,
+  uniqueIndex,
+  uuid,
+} from 'drizzle-orm/pg-core';
 import { id, timestamps, tz } from './_common';
 import { devices } from './booths';
 import { orgs } from './orgs';
@@ -65,9 +74,18 @@ export const uploadJobs = pgTable(
     status: uploadStatus('status').notNull().default('pending'),
     attempts: integer('attempts').notNull().default(0),
     lastError: text('last_error'),
+    /** Machine-readable failure (drive_revoked, drive_quota, …) so Studio can explain it. */
+    errorCode: text('error_code'),
+    /** Backoff: the runner picks the job when this has passed (null = now). */
+    nextAttemptAt: tz('next_attempt_at'),
+    finishedAt: tz('finished_at'),
     ...timestamps,
   },
-  (t) => [index('upload_jobs_org_idx').on(t.orgId)],
+  (t) => [
+    index('upload_jobs_org_idx').on(t.orgId),
+    uniqueIndex('upload_jobs_session_target_uq').on(t.sessionId, t.target),
+    index('upload_jobs_status_idx').on(t.status, t.nextAttemptAt),
+  ],
 );
 
 /** Append-only: UPDATE/DELETE/TRUNCATE blocked by trigger (see RLS migration). */

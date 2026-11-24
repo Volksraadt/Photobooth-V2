@@ -73,6 +73,15 @@ export const sessions = pgTable(
     syncedAt: tz('synced_at'),
     offline: boolean('offline').notNull().default(false),
     driveFolderUrl: text('drive_folder_url'),
+    /** Drive folder id of this session (kept so retries reuse it). */
+    driveFolderId: text('drive_folder_id'),
+    /**
+     * F5: what the agent uploaded + what the worker needs (config version, selected shots,
+     * filter/frame). Written by POST /device/sessions/:id/complete.
+     */
+    manifest: jsonb('manifest'),
+    /** All files confirmed in object storage (the agent may now delete its local copy). */
+    filesCompleteAt: tz('files_complete_at'),
     ...timestamps,
   },
   (t) => [
@@ -115,11 +124,23 @@ export const sessionOutputs = pgTable(
     storagePath: text('storage_path'),
     driveFileId: text('drive_file_id'),
     status: outputStatus('status').notNull().default('pending'),
+    /** File name inside the Drive subfolder. */
+    name: text('name'),
+    mimeType: text('mime_type'),
+    bytes: integer('bytes'),
+    sha256: text('sha256'),
+    slotIndex: integer('slot_index'),
+    /** The agent's local_files id (idempotency key of the upload). */
+    sourceFileId: text('source_file_id'),
     ...timestamps,
   },
   (t) => [
     index('session_outputs_org_idx').on(t.orgId),
     index('session_outputs_session_idx').on(t.sessionId),
+    uniqueIndex('session_outputs_source_uq')
+      .on(t.sessionId, t.sourceFileId)
+      .where(sql`${t.sourceFileId} is not null`),
+    uniqueIndex('session_outputs_name_uq').on(t.sessionId, t.kind, t.name),
   ],
 );
 

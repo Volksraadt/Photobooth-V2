@@ -53,6 +53,8 @@
   - Ditambah F3: `POST /device/events` (outbox agent: `device_events` + `print_jobs`, idempotent per id, balasan = id yang tersimpan), `printerStatus` di `POST /device/heartbeat`. Sejak F3 pemanggil `/pair/*` dan `/device/*` adalah Local Agent, bukan Kiosk.
   - Ditambah F4: `POST /device/payments` (id percobaan dari agent, idempotent; nominal dicek terhadap harga frame di versi config), `GET /device/payments/:id` (polling; API menanyakan provider ≤ 1×/3 dtk), `POST /device/payments/:id/cancel`, `GET /device/vouchers` (hash voucher booth), `POST /device/vouchers/redeem`; `POST /device/events` menerima `voucherUses`, `cashApprovals`, `sessions`; `/device/stream` mengirim event `payment` (`{paymentId, status}`). `POST /webhooks/midtrans/:orgId`. Studio: `GET|PUT /studio/orgs/:orgId/integrations/midtrans`, `POST …/midtrans/test` (owner/manager). Dev (`PB_PAYMENT_PROVIDER=mock`): `POST /dev/payments/:id/simulate-paid`. Respons ke device hanya `{id, status, amount, qrString, expiresAt, paidAt}`.
   - Env API F4: `SECRET_MASTER_KEY` (wajib di production), `PB_PUBLIC_API_URL` (URL webhook per transaksi), `PB_PAYMENT_PROVIDER=mock|midtrans`.
+  - Ditambah F5: `PUT /device/sessions/:id/files/:fileId` (raw bytes; header `x-pb-kind`, `x-pb-name`, `x-pb-sha256`, `x-pb-slot`; sha256 isi diverifikasi; maks. 60 MB; idempotent), `POST /device/sessions/:id/complete` (manifest; 409 `missing_files` / `session_unknown`). Publik: `GET /s/:code` (halaman proses / 302 ke Drive / 404), `GET /oauth/google/callback`. Studio (user token, owner/manager): `GET|DELETE /studio/orgs/:orgId/integrations/google-drive`, `POST …/connect` (balas URL consent Google), `GET …/folders`, `PUT …/root-folder` (`create` | `existing`), `POST …/test`; semua anggota org: `POST /studio/orgs/:orgId/sessions/:sessionId/retry-upload`.
+  - Env API/worker F5: `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `GOOGLE_REDIRECT_URI` (default `<PB_PUBLIC_API_URL>/oauth/google/callback`), `PB_STUDIO_URL`, `PB_STORAGE` (+ `SUPABASE_*`), `REDIS_URL` (opsional), `FFMPEG_PATH`, `PB_STORAGE_RETENTION_DAYS`, `PB_GOOGLE_BASE_URL` (hanya dev/test: Google tiruan).
 
 ### 2.3 Worker (`apps/worker`)
 - BullMQ + Redis. Job:
@@ -60,6 +62,7 @@
   - `upload-drive`: buat folder, unggah per subfolder, set permission "anyone with link: reader", simpan URL folder ke sesi.
   - `billing-*`: buat tagihan bulanan, tandai jatuh tempo, terapkan downgrade.
 - Retry dengan exponential backoff; job gagal permanen muncul di log operasional owner.
+- Implementasi F5 (`apps/worker`): antrian sebenarnya = tabel `upload_jobs` (atomik, `FOR UPDATE SKIP LOCKED`, backoff 15 dtk × 2ⁿ maks. 15 menit, 8 percobaan). BullMQ (`REDIS_URL`) hanya membangunkan worker; tanpa Redis worker polling tiap 3 dtk. Job `storage` (`process-session`) → job `drive` (`upload-drive`). Error yang butuh owner (`drive_revoked`, `drive_quota`, `drive_folder_missing`, `drive_not_connected`) tidak di-retry otomatis; Studio menampilkan pesan dan tombol Coba lagi, dan menghubungkan ulang Drive menjalankan ulang job itu sendiri. Pembersihan: storage platform dihapus 30 hari setelah Drive selesai. Output turunan dibuat oleh `@pb/compositor` (`mirrorPhoto`, `filterPhoto`, `buildGif`, `applyWatermark`, `buildVideoFrame`) + ffmpeg. Paket baru: `@pb/storage` (object storage + manifest sesi), `@pb/drive` (klien Drive `drive.file`, OAuth, `FakeGoogle` untuk test).
 
 ### 2.4 Kiosk (`apps/kiosk`)
 - Vite + React, dibungkus **Tauri** (ringan, jalan di Windows/macOS/Linux; Raspberry Pi nanti via build Linux ARM).
@@ -166,7 +169,7 @@ State: `cover → tutorial → framePick → payment → capture → review → 
 2. Agent unggah original + composite + metadata ke object storage via API.
 3. API membuat job `process-session` → worker membuat mirrored, filtered, GIF, video.
 4. Job `upload-drive` → folder Drive owner. URL folder disimpan; `/s/:code` kini redirect.
-5. File lokal di booth dihapus setelah semua upload terkonfirmasi (dengan retensi opsional N hari).
+5. File lokal di booth dihapus setelah semua upload terkonfirmasi (dengan retensi opsional N hari). Implementasi F5: agent `PUT` tiap file lalu `POST …/complete`; penghapusan lokal hanya setelah `complete` sukses (lihat decisions F5).
 
 ## 5. Keamanan
 - Kredensial Midtrans owner dan refresh token Google: dienkripsi AES-256-GCM dengan master key dari environment (pindah ke KMS saat produksi).

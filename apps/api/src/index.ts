@@ -1,9 +1,13 @@
 import { existsSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { serve } from '@hono/node-server';
-import { BoothConfigEvents, getDb, listenBoothConfig } from '@pb/db';
+import { BoothConfigEvents, getDb, listenBoothConfig, SESSION_QUEUE } from '@pb/db';
 import { secretBoxFromEnv, type SecretBox } from '@pb/crypto';
+import { AccessTokenCache, GoogleOAuth, googleConfigFromEnv } from '@pb/drive';
+import { storageFromEnv } from '@pb/storage';
+import { Queue } from 'bullmq';
 import { createApp, createPaymentGateway } from './app';
+import type { JobWaker } from './types';
 import { userTokenVerifierFromEnv } from './config';
 
 const rootEnv = resolve(import.meta.dirname, '../../../.env');
@@ -16,6 +20,8 @@ const paymentMode = process.env.PB_PAYMENT_PROVIDER === 'mock' ? 'mock' : 'midtr
 if (paymentMode === 'mock' && process.env.NODE_ENV === 'production') {
   throw new Error('PB_PAYMENT_PROVIDER=mock is not allowed in production');
 }
+const googleConfig = googleConfigFromEnv();
+const storage = storageFromEnv();
 const app = createApp({
   db: getDb(),
   verifyUserToken: userTokenVerifierFromEnv(),
@@ -23,10 +29,33 @@ const app = createApp({
   secretBox,
   payments: createPaymentGateway({ mode: paymentMode, secretBox }),
   publicApiUrl: process.env.PB_PUBLIC_API_URL?.replace(/\/$/, '') || null,
+  storage: storage,
+  google: googleConfig ? new GoogleOAuth(googleConfig) : null,
+  driveTokens: new AccessTokenCache(),
+  jobs: createJobWaker(),
+  studioUrl: process.env.PB_STUDIO_URL ?? 'http://localhost:3000',
 });
+console.log(
+  `[api] drive: ${googleConfig ? 'configured' : 'not configured (set GOOGLE_CLIENT_ID/SECRET)'}, storage: ${storage.kind}, queue: ${process.env.REDIS_URL ? 'bullmq' : 'db polling'}`,
+);
 console.log(
   `[api] payments: ${paymentMode}${secretBox ? '' : ' (SECRET_MASTER_KEY missing: credentials cannot be saved)'}`,
 );
+
+/** Redis configured → wake the worker through BullMQ; otherwise the worker polls the job table. */
+function createJobWaker(): JobWaker {
+  const url = process.env.REDIS_URL;
+  if (!url) return { wake: async () => undefined };
+  const queue = new Queue(SESSION_QUEUE, {
+    connection: { url, maxRetriesPerRequest: null },
+  });
+  queue.on('error', (err) => console.warn('[api] redis queue error:', err.message));
+  return {
+    wake: async (sessionId) => {
+      await queue.add('session', { sessionId }, { removeOnComplete: 100, removeOnFail: 100 });
+    },
+  };
+}
 
 function optionalSecretBox(): SecretBox | null {
   try {

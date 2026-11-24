@@ -63,7 +63,11 @@ export const driveConnections = pgTable('drive_connections', {
   /** @pb/crypto SecretBox payload, AAD = `org:<orgId>:drive`. */
   encryptedRefreshToken: text('encrypted_refresh_token').notNull(),
   rootFolderId: text('root_folder_id'),
+  rootFolderName: text('root_folder_name'),
   status: connectionStatus('status').notNull().default('untested'),
+  /** Last failure shown in Studio (never contains tokens). */
+  lastError: text('last_error'),
+  connectedBy: text('connected_by'),
   ...timestamps,
 });
 

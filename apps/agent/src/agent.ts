@@ -17,6 +17,7 @@ import { Processor } from './processing';
 import { SessionFiles } from './sessions';
 import { AgentStore } from './store';
 import { Telemetry } from './telemetry';
+import { UploadQueue } from './uploads';
 
 type KioskReport = { cameraSource: string; cameraStatus: string; configVersion: number | null };
 
@@ -31,6 +32,7 @@ export class Agent {
   readonly processor: Processor;
   readonly telemetry: Telemetry;
   readonly money: MoneyService;
+  uploads!: UploadQueue;
   readonly id: string;
   private servers: Server[] = [];
   private wss: WebSocketServer[] = [];
@@ -66,8 +68,11 @@ export class Agent {
       this.files,
       this.assets,
       this.printer,
-      (sessionId, step, progress) =>
-        this.broadcast({ type: 'processing', sessionId, step, progress }),
+      (sessionId, step, progress) => {
+        this.broadcast({ type: 'processing', sessionId, step, progress });
+        // Strip + session record are on disk/outbox: upload in the background right away.
+        if (step === 'done') void this.uploads?.kick();
+      },
     );
     this.telemetry = new Telemetry(this.store, this.config.api, () => this.heartbeatBody());
     this.money = new MoneyService(
@@ -77,7 +82,22 @@ export class Agent {
       (msg) => this.broadcast(msg),
       event,
     );
-    this.telemetry.subscribe((online) => this.broadcast({ type: 'network', online }));
+    this.uploads = new UploadQueue(
+      this.store,
+      this.files,
+      this.config.api,
+      this.telemetry,
+      {
+        retentionDays: options.localRetentionDays ?? 0,
+        intervalMs: options.uploadMs ?? 15_000,
+      },
+      event,
+    );
+    this.telemetry.subscribe((online) => {
+      this.broadcast({ type: 'network', online });
+      // Back online: files that waited offline go out now, without waiting for the backoff.
+      if (online) this.uploads?.resetBackoff();
+    });
 
     this.config.subscribe((s) => {
       this.broadcast({ type: 'config', version: s.status === 'ready' ? s.version : null });
@@ -134,6 +154,7 @@ export class Agent {
       printer: this.printer.status,
       outboxPending: this.store.outboxCount(),
       outboxByKind: this.store.pendingOutboxByKind(),
+      uploads: this.store.uploadSummary(),
       vouchers: (() => {
         const boothId = cs.status === 'ready' ? cs.config.boothId : null;
         return boothId ? this.store.voucherCount(boothId) : 0;
@@ -185,6 +206,7 @@ export class Agent {
     if (this.options.telemetry) {
       this.telemetry.start(this.options.heartbeatMs, this.options.outboxFlushMs);
       this.money.start();
+      this.uploads.start();
     }
     this.store.event({
       level: 'info',
@@ -255,6 +277,7 @@ export class Agent {
     this.config.stop();
     this.telemetry.stop();
     this.money.stop();
+    await this.uploads.stop();
     this.printer.stop();
     this.camera.stop();
     for (const w of this.wss) {

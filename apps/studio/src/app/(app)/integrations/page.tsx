@@ -2,6 +2,13 @@ import { listRefundCandidates } from '@pb/db';
 import { Alert, Card, CardContent, CardDescription, CardHeader, CardTitle } from '@pb/ui';
 import { apiFetch } from '@/lib/api';
 import { asUser, requireOrg } from '@/lib/org';
+import {
+  ConnectDriveButton,
+  DisconnectDriveButton,
+  RootFolderForm,
+  TestDriveButton,
+  type DriveFolderOption,
+} from './drive-forms';
 import { MidtransForm, TestConnectionButton, type CredentialView } from './midtrans-forms';
 
 type IntegrationState = {
@@ -20,9 +27,60 @@ const STATUS_LABEL: Record<CredentialView['status'], string> = {
 
 const idr = (n: number) => `Rp${n.toLocaleString('id-ID')}`;
 
-export default async function IntegrationsPage() {
+type DriveState = {
+  configured: boolean;
+  redirectUri: string | null;
+  connection: {
+    googleEmail: string;
+    status: 'untested' | 'ok' | 'failed' | 'revoked';
+    lastError: string | null;
+    rootFolderId: string | null;
+    rootFolderName: string | null;
+    rootFolderUrl: string | null;
+  } | null;
+};
+
+/** Result of the Google OAuth round trip (`?drive=` set by apps/api's callback). */
+const DRIVE_FLASH: Record<string, { error: boolean; text: string }> = {
+  connected: { error: false, text: 'Google Drive terhubung.' },
+  denied: { error: true, text: 'Izin Google Drive tidak diberikan. Coba hubungkan lagi.' },
+  expired: { error: true, text: 'Sesi hubungkan kedaluwarsa. Mulai lagi.' },
+  no_refresh_token: {
+    error: true,
+    text: 'Google tidak memberi izin akses berkelanjutan. Cabut akses aplikasi di myaccount.google.com/permissions lalu hubungkan lagi.',
+  },
+  scope_missing: {
+    error: true,
+    text: 'Izin Google Drive yang diberikan tidak lengkap. Hubungkan lagi.',
+  },
+  not_configured: { error: true, text: 'Server belum dikonfigurasi untuk Google Drive.' },
+  error: { error: true, text: 'Gagal menghubungkan Google Drive. Coba lagi.' },
+};
+
+export default async function IntegrationsPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ drive?: string }>;
+}) {
+  const { drive: driveFlash } = await searchParams;
   const { user, org } = await requireOrg();
   const canEdit = org.role !== 'operator';
+
+  let drive: DriveState | null = null;
+  let driveFolders: DriveFolderOption[] = [];
+  if (canEdit) {
+    try {
+      const res = await apiFetch(`/studio/orgs/${org.id}/integrations/google-drive`);
+      if (res.ok) drive = (await res.json()) as DriveState;
+      if (drive?.connection && drive.connection.status !== 'revoked') {
+        const f = await apiFetch(`/studio/orgs/${org.id}/integrations/google-drive/folders`);
+        if (f.ok) driveFolders = ((await f.json()) as { folders: DriveFolderOption[] }).folders;
+      }
+    } catch {
+      // The Midtrans section below reports the API being down.
+    }
+  }
+  const flash = driveFlash ? DRIVE_FLASH[driveFlash] : undefined;
 
   let state: IntegrationState | null = null;
   let loadError: string | null = null;
@@ -128,6 +186,89 @@ export default async function IntegrationsPage() {
                 </section>
               );
             })}
+          </CardContent>
+        </Card>
+      )}
+
+      {canEdit && drive && (
+        <Card data-testid="drive-card">
+          <CardHeader>
+            <CardTitle className="text-base">Google Drive</CardTitle>
+            <CardDescription>
+              Semua file sesi (foto asli, mirror, filter, strip, GIF, video) diunggah ke Google
+              Drive milik Anda. Aplikasi hanya meminta izin <code>drive.file</code>: ia hanya bisa
+              mengakses file dan folder yang dibuatnya sendiri, bukan seluruh Drive Anda.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            {flash && (
+              <Alert variant={flash.error ? 'destructive' : 'default'} data-testid="drive-flash">
+                {flash.text}
+              </Alert>
+            )}
+            {!drive.configured && (
+              <Alert variant="destructive">
+                Server API belum dikonfigurasi untuk Google Drive (GOOGLE_CLIENT_ID,
+                GOOGLE_CLIENT_SECRET, SECRET_MASTER_KEY). Lihat docs/testing/F5-manual.md.
+              </Alert>
+            )}
+            {drive.configured && !drive.connection && (
+              <div className="space-y-2">
+                <p className="text-sm text-muted-foreground">Belum terhubung.</p>
+                <ConnectDriveButton reconnect={false} />
+              </div>
+            )}
+            {drive.connection && (
+              <div className="space-y-4">
+                <div className="text-sm" data-testid="drive-status">
+                  <div>
+                    Akun: <b>{drive.connection.googleEmail}</b> · Status:{' '}
+                    <b>
+                      {drive.connection.status === 'ok'
+                        ? 'terhubung'
+                        : drive.connection.status === 'revoked'
+                          ? 'akses dicabut'
+                          : drive.connection.status === 'failed'
+                            ? 'bermasalah'
+                            : 'belum dites'}
+                    </b>
+                  </div>
+                  {drive.connection.lastError && (
+                    <p className="mt-1 text-destructive">{drive.connection.lastError}</p>
+                  )}
+                  <div className="mt-1">
+                    Folder root:{' '}
+                    {drive.connection.rootFolderUrl ? (
+                      <a
+                        className="underline"
+                        href={drive.connection.rootFolderUrl}
+                        target="_blank"
+                        rel="noreferrer"
+                      >
+                        {drive.connection.rootFolderName}
+                      </a>
+                    ) : (
+                      <span className="text-destructive">belum dipilih</span>
+                    )}
+                    <span className="text-muted-foreground">
+                      {' '}
+                      → &lt;nama booth&gt; / tanggal / kode sesi / 6 subfolder
+                    </span>
+                  </div>
+                </div>
+                <div className="flex flex-wrap items-start gap-3">
+                  {drive.connection.status === 'revoked' && <ConnectDriveButton reconnect />}
+                  {drive.connection.status !== 'revoked' && <TestDriveButton />}
+                  <DisconnectDriveButton />
+                </div>
+                {drive.connection.status !== 'revoked' && (
+                  <RootFolderForm
+                    folders={driveFolders}
+                    currentId={drive.connection.rootFolderId}
+                  />
+                )}
+              </div>
+            )}
           </CardContent>
         </Card>
       )}

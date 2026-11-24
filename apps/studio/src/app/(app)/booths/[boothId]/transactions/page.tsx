@@ -1,9 +1,16 @@
-import { getBooth, listBoothSessions, listRefundCandidates } from '@pb/db';
+import {
+  getBooth,
+  listBoothSessions,
+  listRefundCandidates,
+  listUploadJobsForSessions,
+} from '@pb/db';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@pb/ui';
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { formatInZone } from '@/lib/timezones';
 import { asUser, requireOrg } from '@/lib/org';
+import { uploadState } from '@/lib/upload-status';
+import { RetryUploadButton } from './retry-button';
 
 const METHOD: Record<string, string> = {
   qris: 'QRIS',
@@ -36,10 +43,19 @@ export default async function TransactionsPage({
       listBoothSessions(tx, boothId, 100),
       listRefundCandidates(tx, org.id),
     ]);
-    return { booth: row.booth, sessions, refunds: refunds.filter((r) => r.boothId === boothId) };
+    const jobs = await listUploadJobsForSessions(
+      tx,
+      sessions.map((x) => x.id),
+    );
+    return {
+      booth: row.booth,
+      sessions,
+      jobs,
+      refunds: refunds.filter((r) => r.boothId === boothId),
+    };
   });
   if (!data) notFound();
-  const { booth, sessions, refunds } = data;
+  const { booth, sessions, refunds, jobs } = data;
   const tz = booth.timezone;
 
   return (
@@ -94,6 +110,7 @@ export default async function TransactionsPage({
                   <th className="text-right">Fee</th>
                   <th className="text-right">Bersih</th>
                   <th>Status</th>
+                  <th>File</th>
                 </tr>
               </thead>
               <tbody className="divide-y">
@@ -113,6 +130,9 @@ export default async function TransactionsPage({
                     <td className="text-right">{idr(s.feeAmount)}</td>
                     <td className="text-right">{idr(s.netAmount)}</td>
                     <td>{STATUS[s.status] ?? s.status}</td>
+                    <td data-testid={`upload-${s.code}`}>
+                      <UploadCell session={s} jobs={jobs.filter((j) => j.sessionId === s.id)} />
+                    </td>
                   </tr>
                 ))}
               </tbody>
@@ -120,6 +140,39 @@ export default async function TransactionsPage({
           )}
         </CardContent>
       </Card>
+    </div>
+  );
+}
+
+function UploadCell({
+  session,
+  jobs,
+}: {
+  session: Parameters<typeof uploadState>[0] & { id: string; code: string };
+  jobs: Parameters<typeof uploadState>[1];
+}) {
+  const u = uploadState(session, jobs);
+  const tone =
+    u.kind === 'done'
+      ? 'text-emerald-700'
+      : u.kind === 'failed'
+        ? 'text-destructive'
+        : u.kind === 'retrying'
+          ? 'text-amber-700'
+          : 'text-muted-foreground';
+  return (
+    <div className="space-y-1">
+      <div className={tone}>
+        {u.driveUrl ? (
+          <a className="underline" href={u.driveUrl} target="_blank" rel="noreferrer">
+            {u.label}
+          </a>
+        ) : (
+          u.label
+        )}
+      </div>
+      {u.detail && <div className="max-w-xs text-xs text-muted-foreground">{u.detail}</div>}
+      {u.canRetry && <RetryUploadButton sessionId={session.id} code={session.code} />}
     </div>
   );
 }

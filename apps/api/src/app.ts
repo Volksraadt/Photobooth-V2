@@ -3,9 +3,13 @@ import { eq, sql } from 'drizzle-orm';
 import { Hono } from 'hono';
 import { cors } from 'hono/cors';
 import { HTTPException } from 'hono/http-exception';
+import { AccessTokenCache } from '@pb/drive';
+import { MemoryStorage } from '@pb/storage';
 import { DeviceSignals } from './payments/device-signals';
 import { createPaymentGateway } from './payments/gateway';
 import { deviceRoutes, pairRoutes } from './routes/device-routes';
+import { googleOAuthRoutes } from './routes/drive-routes';
+import { shortLinkRoutes } from './routes/short-link-routes';
 import { studioRoutes } from './routes/studio-routes';
 import { webhookRoutes } from './routes/webhook-routes';
 import type { AppDeps, AppEnv, ResolvedDeps } from './types';
@@ -22,6 +26,11 @@ export function createApp(input: AppDeps) {
     payments: input.payments ?? createPaymentGateway({ mode: 'midtrans', secretBox }),
     deviceSignals: input.deviceSignals ?? new DeviceSignals(),
     publicApiUrl: input.publicApiUrl ?? null,
+    storage: input.storage ?? new MemoryStorage(),
+    google: input.google ?? null,
+    driveTokens: input.driveTokens ?? new AccessTokenCache(),
+    jobs: input.jobs ?? { wake: async () => undefined },
+    studioUrl: input.studioUrl ?? 'http://localhost:3000',
   };
   const app = new Hono<AppEnv>();
 
@@ -41,9 +50,17 @@ export function createApp(input: AppDeps) {
   // Kiosks run on another origin (Tauri / dev server). Token auth only, no cookies.
   const kioskCors = cors({
     origin: '*',
-    allowHeaders: ['Authorization', 'Content-Type', 'If-None-Match'],
+    allowHeaders: [
+      'Authorization',
+      'Content-Type',
+      'If-None-Match',
+      'X-Pb-Kind',
+      'X-Pb-Name',
+      'X-Pb-Sha256',
+      'X-Pb-Slot',
+    ],
     exposeHeaders: ['ETag'],
-    allowMethods: ['GET', 'POST', 'OPTIONS'],
+    allowMethods: ['GET', 'POST', 'PUT', 'OPTIONS'],
   });
   app.use('/device/*', kioskCors);
   app.use('/pair/*', kioskCors);
@@ -65,6 +82,8 @@ export function createApp(input: AppDeps) {
   app.route('/device', deviceRoutes());
   app.route('/studio', studioRoutes());
   app.route('/webhooks', webhookRoutes());
+  app.route('/oauth/google', googleOAuthRoutes());
+  app.route('/s', shortLinkRoutes());
 
   // Dev only (PB_PAYMENT_PROVIDER=mock): "the buyer paid" → a signed notification through the
   // real webhook path. Never available with the real Midtrans gateway.

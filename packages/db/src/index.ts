@@ -7,3 +7,4 @@ export * from './booth-repo';
 export * from './device-repo';
 export * from './notify';
 export * from './payment-repo';
+export * from './output-repo';

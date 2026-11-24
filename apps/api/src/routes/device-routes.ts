@@ -16,6 +16,7 @@ import { Hono } from 'hono';
 import { streamSSE } from 'hono/streaming';
 import { z } from 'zod';
 import { deviceAuth } from '../middleware/device-auth';
+import { deviceOutputRoutes } from './output-routes';
 import { devicePaymentRoutes } from './payment-routes';
 import type { AppEnv } from '../types';
 
@@ -274,6 +275,7 @@ export function deviceRoutes() {
   });
 
   app.route('/', devicePaymentRoutes());
+  app.route('/', deviceOutputRoutes());
 
   return app;
 }

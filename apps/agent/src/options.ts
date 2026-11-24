@@ -26,6 +26,10 @@ export type AgentOptions = {
   configPollMs: number;
   heartbeatMs: number;
   outboxFlushMs: number;
+  /** F5: how often the upload queue looks for work (it also runs right after processing). */
+  uploadMs?: number;
+  /** F5: keep the local copy this many days after a confirmed upload (0 = delete at once). */
+  localRetentionDays?: number;
 };
 
 /** Per-user application data folder (Windows %APPDATA%, macOS Application Support, XDG). */
@@ -83,5 +87,7 @@ export function optionsFromEnv(env: NodeJS.ProcessEnv = process.env): AgentOptio
     configPollMs: num(env.PB_AGENT_CONFIG_POLL_MS, 5000),
     heartbeatMs: num(env.PB_AGENT_HEARTBEAT_MS, 30_000),
     outboxFlushMs: num(env.PB_AGENT_OUTBOX_MS, 10_000),
+    uploadMs: num(env.PB_AGENT_UPLOAD_MS, 15_000),
+    localRetentionDays: num(env.PB_LOCAL_RETENTION_DAYS, 0),
   };
 }

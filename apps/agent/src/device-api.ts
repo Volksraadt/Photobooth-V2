@@ -50,6 +50,23 @@ export class DeviceApiError extends Error {
     super(message);
     this.name = 'DeviceApiError';
   }
+  /** File ids the API says are not stored (`missing_files`). */
+  missing: string[] = [];
+}
+
+async function apiError(res: Response): Promise<DeviceApiError> {
+  const json = (await res.json().catch(() => null)) as {
+    error?: string;
+    message?: string;
+    missing?: string[];
+  } | null;
+  const err = new DeviceApiError(
+    res.status,
+    json?.message ?? json?.error ?? `HTTP ${res.status}`,
+    json?.error,
+  );
+  err.missing = json?.missing ?? [];
+  return err;
 }
 
 export type HeartbeatBody = {
@@ -133,7 +150,7 @@ export class DeviceApi {
   ): Promise<Response> {
     const headers = new Headers(init.headers);
     if (this.token) headers.set('authorization', `Bearer ${this.token}`);
-    if (init.body) headers.set('content-type', 'application/json');
+    if (init.body && !headers.has('content-type')) headers.set('content-type', 'application/json');
     const signal =
       init.signal ??
       (init.timeoutMs === 0 ? undefined : AbortSignal.timeout(init.timeoutMs ?? 15_000));
@@ -255,6 +272,47 @@ export class DeviceApi {
     timeoutMs = 4_000,
   ) {
     return this.jsonCall<RedeemResult>('POST', '/device/vouchers/redeem', body, timeoutMs);
+  }
+
+  /** One session file to object storage (raw bytes; the API verifies the sha256 header). */
+  async uploadSessionFile(
+    sessionId: string,
+    f: {
+      id: string;
+      kind: 'original' | 'composite';
+      name: string;
+      sha256: string;
+      slotIndex: number | null;
+      mimeType: string;
+      bytes: Uint8Array;
+    },
+  ): Promise<void> {
+    const res = await this.request(
+      `/device/sessions/${encodeURIComponent(sessionId)}/files/${encodeURIComponent(f.id)}`,
+      {
+        method: 'PUT',
+        headers: {
+          'content-type': f.mimeType,
+          'x-pb-kind': f.kind,
+          'x-pb-name': f.name,
+          'x-pb-sha256': f.sha256,
+          ...(f.slotIndex ? { 'x-pb-slot': String(f.slotIndex) } : {}),
+        },
+        body: f.bytes,
+        timeoutMs: 120_000,
+      },
+    );
+    if (!res.ok) throw await apiError(res);
+  }
+
+  /** Tells the API every file is stored; it creates the processing job. */
+  async completeSession(sessionId: string, manifest: unknown): Promise<void> {
+    const res = await this.request(`/device/sessions/${encodeURIComponent(sessionId)}/complete`, {
+      method: 'POST',
+      body: JSON.stringify(manifest),
+      timeoutMs: 30_000,
+    });
+    if (!res.ok) throw await apiError(res);
   }
 
   async heartbeat(body: HeartbeatBody): Promise<void> {

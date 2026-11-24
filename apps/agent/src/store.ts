@@ -123,6 +123,13 @@ const MIGRATIONS: string[] = [
   alter table local_sessions add column offline integer not null default 0;
   alter table local_sessions add column payment_id text;
   `,
+  // v3 (F5): upload queue state per session. sync_status: pending | uploaded | purged.
+  `
+  alter table local_sessions add column upload_attempts integer not null default 0;
+  alter table local_sessions add column upload_next_at text;
+  alter table local_sessions add column upload_error text;
+  alter table local_sessions add column uploaded_at text;
+  `,
 ];
 
 export type LocalVoucherRow = {
@@ -155,6 +162,10 @@ export type LocalSessionRow = {
   sync_status: string;
   offline: number;
   payment_id: string | null;
+  upload_attempts: number;
+  upload_next_at: string | null;
+  upload_error: string | null;
+  uploaded_at: string | null;
   created_at: string;
   updated_at: string;
 };
@@ -458,6 +469,82 @@ export class AgentStore {
       'update local_files set selected = 1 where id = ? and session_id = ?',
     );
     for (const id of fileIds) stmt.run(id, sessionId);
+  }
+
+  // --- upload queue (F5) ---
+
+  /** Completed sessions whose files are not yet confirmed in storage and whose backoff passed. */
+  sessionsToUpload(nowIso: string, limit = 5): LocalSessionRow[] {
+    return this.all<LocalSessionRow>(
+      `select * from local_sessions
+       where status = 'completed' and sync_status = 'pending'
+         and (upload_next_at is null or upload_next_at <= ?)
+       order by completed_at limit ?`,
+      nowIso,
+      limit,
+    );
+  }
+
+  setFileUploadStatus(ids: string[], status: 'pending' | 'uploaded' | 'deleted') {
+    const stmt = this.db.prepare('update local_files set upload_status = ? where id = ?');
+    for (const id of ids) stmt.run(status, id);
+  }
+
+  markUploadFailed(id: string, error: string, nextAtIso: string) {
+    this.run(
+      `update local_sessions set upload_attempts = upload_attempts + 1, upload_error = ?,
+         upload_next_at = ?, updated_at = ? where id = ?`,
+      error.slice(0, 500),
+      nextAtIso,
+      now(),
+      id,
+    );
+  }
+
+  markSessionUploaded(id: string) {
+    this.run(
+      `update local_sessions set sync_status = 'uploaded', uploaded_at = ?, upload_error = null,
+         upload_next_at = null, updated_at = ? where id = ?`,
+      now(),
+      now(),
+      id,
+    );
+  }
+
+  /** Uploaded sessions whose local copy is older than the retention window. */
+  sessionsToPurge(beforeIso: string, limit = 20): LocalSessionRow[] {
+    return this.all<LocalSessionRow>(
+      `select * from local_sessions where sync_status = 'uploaded' and uploaded_at <= ?
+       order by uploaded_at limit ?`,
+      beforeIso,
+      limit,
+    );
+  }
+
+  markSessionPurged(id: string) {
+    this.run(
+      `update local_sessions set sync_status = 'purged', updated_at = ? where id = ?`,
+      now(),
+      id,
+    );
+  }
+
+  resetUploadBackoff() {
+    this.run(`update local_sessions set upload_next_at = null where sync_status = 'pending'`);
+  }
+
+  uploadSummary(): { pending: number; failing: number; lastError: string | null } {
+    const row = this.get<{ pending: number; failing: number | null; err: string | null }>(
+      `select count(*) as pending,
+         sum(case when upload_attempts > 0 then 1 else 0 end) as failing,
+         max(upload_error) as err
+       from local_sessions where status = 'completed' and sync_status = 'pending'`,
+    );
+    return {
+      pending: row?.pending ?? 0,
+      failing: row?.failing ?? 0,
+      lastError: row?.err ?? null,
+    };
   }
 
   // --- print jobs ---

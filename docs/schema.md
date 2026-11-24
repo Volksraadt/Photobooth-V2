@@ -357,6 +357,13 @@ Rekap dihitung dari `sessions` + `payments` + `print_jobs`. Untuk performa, buat
 - `device_events.kind` baru dari API: `voucher_conflict` (voucher dipakai dua sesi), `sync_conflict` (item outbox ditolak permanen). Dari agent: `voucher_offline`, `cash_approved`, `cash_pin_rejected`, `payment_failed`.
 - Status `payments`: `pending → paid | expired | canceled | failed`; `paid_late` = settlement yang terlambat/ganda (kandidat refund manual). `paid` dan `paid_late` final.
 
+### B.10 Ketetapan F5 (migrasi `0004_f5_output_drive.sql`)
+- `session_outputs`: satu baris per file. Tambah `name` (nama file di Drive), `mime_type`, `bytes`, `sha256`, `slot_index`, `source_file_id` (id `local_files` agent; baris yang diunggah agent). Unik `(session_id, source_file_id)` (parsial, idempotensi unggahan) dan `(session_id, kind, name)`. `storage_path` = key object storage `<orgId>/sessions/<sessionId>/<kind>/<nama>` (null setelah retensi). `status`: `stored` (di storage) → `uploaded` (di Drive, `drive_file_id` terisi) / `failed`. File turunan worker tidak punya `source_file_id`.
+- `sessions`: tambah `manifest` (jsonb, `SessionManifest` dari `@pb/storage`: `version`, `configVersion`, `frameId`, `filterId`, `downloadUrl`, `shots[{slotIndex, takeNumber, fileId}]`, `files[{id, kind, name, sha256, bytes, mimeType, slotIndex}]`), `files_complete_at` (semua file terkonfirmasi di storage), `drive_folder_id`; `drive_folder_url` baru diisi setelah file terakhir terunggah ke Drive.
+- `upload_jobs`: unik `(session_id, target)`. `target = storage` = job `process-session` (agent → storage selesai saat `complete`; job membuat mirrored/filtered/composite/gif/video), `target = drive` = job `upload-drive` (dibuat saat job storage selesai). Tambah `error_code` (`drive_not_connected`, `drive_revoked`, `drive_quota`, `drive_folder_missing`, `storage_missing`, `config_missing`, `failed`), `next_attempt_at` (backoff), `finished_at`. `status`: `pending` (menunggu / menunggu backoff) → `running` → `done` | `failed` (butuh tindakan owner atau percobaan habis). RLS: anggota org membaca (Studio menampilkan status); hanya API/worker yang menulis.
+- `drive_connections` (satu baris per org, tanpa RLS untuk Studio): tambah `root_folder_name`, `last_error` (pesan untuk owner, tanpa token), `connected_by`. `encrypted_refresh_token` = SecretBox, AAD `org:<orgId>:drive`. `status`: `ok` | `failed` | `revoked` | `untested`.
+- Struktur Drive: `<root_folder_id>/<config.output.driveRootFolderName | nama booth>/<YYYY-MM-DD zona booth>/<KODE>/<original|mirrored|filtered|composite|gif|video>/`. Nama file: `original/<KODE>-fotoN.jpg`, `mirrored/<KODE>-fotoN-mirror.jpg`, `filtered/<KODE>-fotoN-filter.jpg`, `composite/<KODE>-strip.jpg`, `gif/<KODE>.gif`, `video/<KODE>.mp4`.
+
 ---
 
 ## C. Penyimpanan lokal (Agent, SQLite)
@@ -402,3 +409,13 @@ File `agent.sqlite` di folder data agent (Windows `%APPDATA%\photobooth-agent`, 
 ### A.7 Ketetapan F4 (renderer, tanpa perubahan schema)
 - `voucher-input` varian `keypad`: baris tampilan kode/status + keypad 3×4. Varian `field`: kolom setinggi `min(height, fontSize × 2,4)`; bila sisa tinggi kotak ≥ 1,2 × tinggi kolom, keypad ringkas 6×2 digambar di sisa kotak (editor dan kiosk sama). Keduanya menerima keyboard/scanner di mode live. Kode ditampilkan `1234-5678-9012`.
 - `qris` dan `payment-timer` tidak digambar di mode live bila `runtime.qrisHidden` (device offline atau QRIS tidak aktif).
+
+### C.3 Ketetapan F5 (SQLite `user_version` 3)
+| Tabel | Perubahan |
+|---|---|
+| `local_sessions` (+kolom) | `upload_attempts`, `upload_next_at` (backoff), `upload_error`, `uploaded_at`. `sync_status`: `pending` → `uploaded` (API mengonfirmasi `complete`) → `purged` (file lokal dihapus) |
+| `local_files.upload_status` | `pending` → `uploaded` (storage menerima file dengan hash yang sama) → `deleted` |
+
+- Yang diunggah: foto `selected = 1` (`original`) + `composite`. Take yang di-retake dan lembar cetak (`print`) tidak diunggah, dihapus bersama sesi.
+- File lokal dan baris metadata tidak dihapus sebelum `POST /device/sessions/:id/complete` sukses. Dengan `PB_LOCAL_RETENTION_DAYS = N > 0`, penghapusan menunggu `uploaded_at + N hari`. Baris `local_sessions`/`local_files` dipertahankan (riwayat); hanya file di disk yang dihapus.
+- Backoff unggah: 10 dtk × 2ⁿ, maks. 10 menit; kembali online mengosongkan backoff. 401 (perangkat dicabut) menghentikan antrian sampai pairing ulang.
