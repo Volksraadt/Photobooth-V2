@@ -3,3 +3,6 @@ export type { Db, Schema, Tx } from './types';
 export { createDb, getDb } from './client';
 export { withUserContext } from './user-context';
 export * from './repo';
+export * from './booth-repo';
+export * from './device-repo';
+export * from './notify';

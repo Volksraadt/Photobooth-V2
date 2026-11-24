@@ -1,0 +1,260 @@
+'use client';
+
+import type { BoxStyle, ElementOf } from '@pb/schema';
+import type { CSSProperties, ReactNode } from 'react';
+import { useRenderer } from '../context';
+import { FilteredImage } from '../filter-view';
+import { FrameComposite } from '../frame-composite';
+import { Placeholder, SAMPLE_PHOTO_URL } from '../placeholder';
+import { filtersOf, framesOf, selectedFilter, selectedFrame } from '../selection';
+import { boxStyleToCss, textStyleToCss } from '../styles';
+import { formatIdr } from '../tokens';
+
+const fill = { position: 'absolute', inset: 0 } as const;
+
+function SelectableItem({
+  selected,
+  itemStyle,
+  selectedStyle,
+  onSelect,
+  testId,
+  children,
+  style,
+}: {
+  selected: boolean;
+  itemStyle?: BoxStyle;
+  selectedStyle: BoxStyle;
+  onSelect?: () => void;
+  testId: string;
+  children: ReactNode;
+  style?: CSSProperties;
+}) {
+  return (
+    <button
+      type="button"
+      data-pb-item={testId}
+      data-pb-selected={selected ? 'true' : 'false'}
+      aria-pressed={selected}
+      onClick={onSelect}
+      tabIndex={onSelect ? 0 : -1}
+      style={{
+        position: 'relative',
+        display: 'flex',
+        flexDirection: 'column',
+        overflow: 'hidden',
+        cursor: onSelect ? 'pointer' : 'default',
+        ...boxStyleToCss(itemStyle),
+        ...style,
+      }}
+    >
+      {children}
+      {selected && (
+        <div style={{ ...fill, pointerEvents: 'none', ...boxStyleToCss(selectedStyle) }} />
+      )}
+    </button>
+  );
+}
+
+export function FramePickerElementView({ el }: { el: ElementOf<'frame-picker'> }) {
+  const { config, runtime, mode, onAction, resolveAsset } = useRenderer();
+  const frames = framesOf(config, runtime);
+  const selectedId = mode === 'editor' ? frames[0]?.id : runtime.selectedFrameId;
+  if (frames.length === 0) {
+    return mode === 'editor' ? (
+      <Placeholder label="Belum ada frame aktif" width={el.width} height={el.height} />
+    ) : null;
+  }
+  const label = el.labelStyle;
+  const labelHeight = label ? label.fontSize * label.lineHeight : 0;
+  const labelLines = (el.showName ? 1 : 0) + (el.showPrice ? 1 : 0);
+  const carousel = el.layout === 'carousel';
+  const itemWidth = (el.width - el.gap * (el.columns - 1)) / el.columns;
+  const rows = Math.ceil(frames.length / el.columns);
+  const itemHeight = carousel || rows <= 1 ? el.height : (el.height - el.gap) / 2;
+  const pad = 16;
+
+  return (
+    <div
+      data-pb-frame-picker
+      style={{
+        ...fill,
+        display: carousel ? 'flex' : 'grid',
+        gridTemplateColumns: carousel ? undefined : `repeat(${el.columns}, ${itemWidth}px)`,
+        gridAutoRows: carousel ? undefined : itemHeight,
+        gap: el.gap,
+        overflowX: carousel ? 'auto' : 'hidden',
+        overflowY: carousel ? 'hidden' : 'auto',
+        scrollbarWidth: 'none',
+        ...boxStyleToCss(el.style),
+      }}
+    >
+      {frames.map((frame) => {
+        const thumb = resolveAsset(frame.thumbnailAssetId);
+        const price = frame.price ?? config.pricing.basePrice;
+        return (
+          <SelectableItem
+            key={frame.id}
+            testId={frame.id}
+            selected={frame.id === selectedId}
+            itemStyle={el.itemStyle}
+            selectedStyle={el.selectedStyle}
+            onSelect={
+              mode === 'live'
+                ? () => onAction({ kind: 'selectFrame', frameId: frame.id })
+                : undefined
+            }
+            style={{ width: itemWidth, height: itemHeight, flex: 'none', padding: pad }}
+          >
+            <div style={{ position: 'relative', flex: 1, minHeight: 0 }}>
+              {thumb && (
+                <img
+                  src={thumb}
+                  alt={frame.name}
+                  draggable={false}
+                  style={{ width: '100%', height: '100%', objectFit: 'contain', display: 'block' }}
+                />
+              )}
+            </div>
+            {labelLines > 0 && (
+              <div
+                style={{
+                  ...textStyleToCss(label),
+                  marginTop: 8,
+                  height: labelHeight * labelLines,
+                  flex: 'none',
+                  overflow: 'hidden',
+                  whiteSpace: 'nowrap',
+                  textOverflow: 'ellipsis',
+                }}
+              >
+                {el.showName && <div>{frame.name}</div>}
+                {el.showPrice && <div style={{ fontWeight: 700 }}>{formatIdr(price)}</div>}
+              </div>
+            )}
+          </SelectableItem>
+        );
+      })}
+    </div>
+  );
+}
+
+export function FramePreviewElementView({ el }: { el: ElementOf<'frame-preview'> }) {
+  const { config, runtime, mode } = useRenderer();
+  const frame = selectedFrame(config, runtime, mode);
+  if (!frame) {
+    return mode === 'editor' ? (
+      <Placeholder label="Pratinjau frame" width={el.width} height={el.height} />
+    ) : null;
+  }
+  const filter = selectedFilter(config, runtime);
+  return (
+    <div style={{ ...fill, ...boxStyleToCss(el.style), overflow: 'hidden' }}>
+      <FrameComposite
+        frame={frame}
+        width={el.width}
+        height={el.height}
+        fit={el.fit}
+        shots={mode === 'live' ? runtime.shots : undefined}
+        filter={filter?.params}
+        mirror={runtime.mirrorShots}
+      />
+    </div>
+  );
+}
+
+export function FilterPickerElementView({ el }: { el: ElementOf<'filter-picker'> }) {
+  const { config, runtime, mode, onAction, resolveAsset } = useRenderer();
+  const filters = filtersOf(config, runtime);
+  const selectedId =
+    mode === 'editor'
+      ? (filters.find((f) => f.isDefault) ?? filters[0])?.id
+      : runtime.selectedFilterId;
+  const firstShot = mode === 'live' ? runtime.shots?.[1]?.url : undefined;
+  const label = el.labelStyle;
+  const labelHeight = el.showLabel && label ? label.fontSize * label.lineHeight + 8 : 0;
+  const gap = Math.round(el.itemSize * 0.12);
+  const radius = el.selectedStyle.borderRadius ?? 0;
+
+  return (
+    <div
+      data-pb-filter-picker
+      style={{
+        ...fill,
+        display: 'flex',
+        flexWrap: el.layout === 'grid' ? 'wrap' : 'nowrap',
+        alignContent: 'flex-start',
+        gap,
+        overflowX: el.layout === 'row' ? 'auto' : 'hidden',
+        overflowY: el.layout === 'grid' ? 'auto' : 'hidden',
+        scrollbarWidth: 'none',
+        ...boxStyleToCss(el.style),
+      }}
+    >
+      {filters.map((filter) => {
+        const thumb = filter.thumbnailAssetId ? resolveAsset(filter.thumbnailAssetId) : undefined;
+        // Thumbnails already show the look; real/sample photos get the filter applied.
+        const src = firstShot ?? thumb ?? SAMPLE_PHOTO_URL;
+        const applyFilter = src !== thumb;
+        return (
+          <button
+            key={filter.id}
+            type="button"
+            data-pb-item={filter.id}
+            data-pb-selected={filter.id === selectedId ? 'true' : 'false'}
+            aria-pressed={filter.id === selectedId}
+            tabIndex={mode === 'live' ? 0 : -1}
+            onClick={
+              mode === 'live'
+                ? () => onAction({ kind: 'selectFilter', filterId: filter.id })
+                : undefined
+            }
+            style={{
+              flex: 'none',
+              width: el.itemSize,
+              height: el.itemSize + labelHeight,
+              display: 'flex',
+              flexDirection: 'column',
+              cursor: mode === 'live' ? 'pointer' : 'default',
+            }}
+          >
+            <div
+              style={{
+                position: 'relative',
+                width: el.itemSize,
+                height: el.itemSize,
+                borderRadius: radius,
+                overflow: 'hidden',
+                flex: 'none',
+              }}
+            >
+              <FilteredImage
+                src={src}
+                params={applyFilter ? filter.params : null}
+                mirror={!!firstShot && runtime.mirrorShots}
+              />
+              {filter.id === selectedId && (
+                <div
+                  style={{ ...fill, pointerEvents: 'none', ...boxStyleToCss(el.selectedStyle) }}
+                />
+              )}
+            </div>
+            {el.showLabel && (
+              <div
+                style={{
+                  ...textStyleToCss(label),
+                  marginTop: 8,
+                  width: '100%',
+                  whiteSpace: 'nowrap',
+                  overflow: 'hidden',
+                  textOverflow: 'ellipsis',
+                }}
+              >
+                {filter.name}
+              </div>
+            )}
+          </button>
+        );
+      })}
+    </div>
+  );
+}

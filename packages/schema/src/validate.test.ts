@@ -305,3 +305,45 @@ describe('session codes', () => {
     expect(isSessionCode('ABCD1234')).toBe(false);
   });
 });
+
+describe('built-in templates', () => {
+  it('are all valid and instantiate for a booth', async () => {
+    const { BUILTIN_TEMPLATES, buildTemplateConfig, instantiateTemplate } =
+      await import('./templates');
+    for (const t of BUILTIN_TEMPLATES) {
+      const stored = buildTemplateConfig(t);
+      const config = instantiateTemplate(stored, {
+        boothId: 'b1',
+        boothName: 'Booth X',
+        timezone: 'Asia/Makassar',
+      });
+      const result = validateBoothConfig(config);
+      expect(
+        result.success,
+        `${t.key}: ${JSON.stringify(result.success ? [] : result.issues)}`,
+      ).toBe(true);
+      expect(config.output.driveRootFolderName).toBe('Booth X');
+      expect(JSON.stringify(config.pages.cover)).toContain('{{boothName}}');
+    }
+  });
+});
+
+describe('asset references', () => {
+  it('finds asset ids incl. fonts and prunes unused refs', async () => {
+    const { pruneUnusedAssets, referencedAssetIds } = await import('./asset-refs');
+    const config = createDefaultBoothConfig({ boothId: 'b' });
+    const ref = { id: 'font1', kind: 'font' as const, url: 'x', sha256: 'a'.repeat(64), bytes: 1 };
+    const unused = { ...ref, id: 'unused', kind: 'image' as const };
+    config.assets.push(ref, unused);
+    const title = config.pages.cover.elements[0]!;
+    if (title.type === 'text') title.fontFamily = '"pb-font-font1", sans-serif';
+    const ids = referencedAssetIds(config);
+    expect(ids.has('font1')).toBe(true);
+    expect(ids.has('builtin-strip-overlay-4')).toBe(true);
+    expect(
+      pruneUnusedAssets(config)
+        .assets.map((a) => a.id)
+        .sort(),
+    ).toEqual(['builtin-strip-overlay-4', 'font1']);
+  });
+});

@@ -169,7 +169,7 @@ export function createDefaultBoothConfig(opts: CreateDefaultBoothConfigOptions):
     cover: page(
       'cover',
       [
-        text(boothName, { x: 360, y: 280, width: 1200, height: 200 }, 140, { fontWeight: 800 }),
+        text(boothName, { x: 160, y: 300, width: 1600, height: 160 }, 120, { fontWeight: 800 }),
         text('Sentuh untuk mulai', { x: 560, y: 520, width: 800, height: 80 }, 48, {
           color: C.muted,
         }),

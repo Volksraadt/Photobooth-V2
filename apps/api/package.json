@@ -10,7 +10,8 @@
     "@pb/db": "workspace:*",
     "@pb/schema": "workspace:*",
     "drizzle-orm": "^0.45.4",
-    "hono": "^4.13.20"
+    "hono": "^4.13.20",
+    "zod": "^4.6.7"
   },
   "exports": {
     ".": "./src/app.ts"

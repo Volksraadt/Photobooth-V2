@@ -49,6 +49,7 @@
   - `/s/:code` — short link sesi (halaman "sedang diproses" atau redirect ke folder Drive).
   - `/oauth/google/*` — callback koneksi Google Drive.
 - Studio juga memanggil API untuk aksi sensitif (simpan kredensial, tes koneksi).
+- Sudah ada (F2): `POST /pair/start`, `POST /pair/status` (tanpa auth; Kiosk membuktikan token lewat hash), `GET /device/config` (ETag/304, 204 = belum ada publish), `GET /device/stream` (SSE `config` saat booth dipublish, dari `LISTEN pb_booth_config`), `POST /device/heartbeat`, `POST /studio/pairing/claim` (token user; owner/manager). CORS terbuka untuk `/device/*` dan `/pair/*` (auth token, tanpa cookie).
 
 ### 2.3 Worker (`apps/worker`)
 - BullMQ + Redis. Job:
@@ -100,11 +101,14 @@ interface CaptureSource {
   capture(opts: { shotIndex: number }): Promise<CapturedImage>; // full-res
   startClip?(maxMs: number): Promise<void>;       // F7 live clip
   stopClip?(): Promise<Blob>;
-  status(): CaptureStatus;                        // connected | reconnecting | error
+  status(): CaptureStatus;                        // idle | connecting | connected | reconnecting | error
+  lastError(): CaptureError | null;               // ditambah di F1
+  onStatusChange(cb): () => void;                 // ditambah di F1: mis. webcam dicabut → 'error'
   disconnect(): Promise<void>;
 }
 ```
 - Mirror hanya diterapkan di tampilan (`camera-view`) dan di file `mirrored/`. File original disimpan tanpa mirror.
+- Implementasi F1: `webcam` (getUserMedia; frame diambil dari track pada resolusi aslinya; event `ended` = dicabut) dan `mock` (pola uji/gambar statis, `simulateDisconnect()` untuk test).
 
 ### 3.2 `PaymentProvider` (`packages/payments`)
 ```ts
@@ -125,6 +129,7 @@ State: `cover → tutorial → framePick → payment → capture → review → 
 - Guard dari `FlowConfig` (tutorial aktif? review aktif? mode event?).
 - Context: sessionId, frameId, harga, paymentId, shots[], filterId, extraPrints.
 - Timer idle per state; setelah `paid`, timeout tidak menghapus sesi.
+- Implementasi (F1): `flowMachine` di `packages/flow`. Host menyediakan actor `connectCamera`, `captureShot`, `createPayment`, `processSession` dan action `cancelPayment`, `onSessionEnd` lewat `flowMachine.provide()`; Kiosk dan preview Studio memakai machine yang sama. Tombol renderer dipetakan ke event dengan `uiActionToEvent()`. Substate Capture: `connecting → countdown → shooting → shotPreview → waiting → done`.
 
 ## 4. Alur data penting
 

@@ -225,11 +225,22 @@ type Filter = {
 ```
 Diterjemahkan ke CSS `filter` + overlay di renderer, dan ke operasi `sharp` di compositor. Test snapshot memastikan selisih visual di bawah ambang.
 
+**Definisi numerik (ditetapkan di F1, `packages/schema/src/filter-math.ts`):**
+- Warna: satu transformasi afin pada nilai sRGB 0..1, `out = M·rgb + offset`, di-clamp ke 0..1 sekali di akhir. `M`/`offset` = komposisi berurutan: brightness `diag(b)` → contrast `c·(v−0,5)+0,5` → saturation (matriks `saturate` Filter Effects) → hueRotate (matriks `hue-rotate`) → sepia (matriks `sepia`, jumlah = `sepia`) → warmth `diag(1+0,15w, 1+0,03w, 1−0,15w)`. Fungsi: `filterColorMatrix(params)`.
+- Vignette: overlay hitam, alpha = `vignette × clamp((d − 0,45) / 0,55, 0, 1)`, `d` = jarak eliptis dari pusat (1 di sudut; CSS `ellipse farthest-corner`).
+- Grain: noise monokrom (rata-rata 0,5), blend `overlay`, opacity `grain × 0,5`. Tidak identik per piksel; dibandingkan secara statistik.
+- Renderer: SVG `feColorMatrix` (`color-interpolation-filters: sRGB`) + dua overlay. Compositor (F3): `sharp.recomb(M)` + `linear(1, offset·255)` + composite overlay.
+
 ### A.5 Aset
 ```ts
 type AssetRef = { id: string; kind: 'image' | 'video' | 'font' | 'audio'; url: string; sha256: string; bytes: number };
 ```
 Agent mengunduh semua aset sebelum mengaktifkan versi config baru. Jika ada aset gagal, versi lama tetap dipakai.
+
+Ketetapan F2:
+- Font yang diunggah dipakai lewat `fontFamily` berisi `pb-font-<assetId>` (mis. `"pb-font-abc123", sans-serif`); renderer memasang `@font-face` untuk setiap aset `font`.
+- `referencedAssetIds(config)` = semua `assetId`/`*AssetId` + referensi `pb-font-…`. Saat publish, `pruneUnusedAssets()` membuang `AssetRef` yang tidak direferensikan.
+- Di F2 (tanpa agent) Kiosk mengunduh aset dari `url`, memverifikasi `sha256`, menyimpannya di Cache Storage, dan merender dari salinan lokal. Aset `data:` (bawaan) dipakai langsung.
 
 ### A.6 Ketetapan detail (ditetapkan di F0)
 
@@ -251,7 +262,7 @@ type ElementAnimation = {
 - `photo-slot.emptyStyle` = `BoxStyle` + `showNumber`, `numberColor`, `numberFontFamily`, `numberFontSize`; `filledStyle`/`activeStyle` = `BoxStyle`.
 - `frame-picker`: tambah `showName: boolean`, `labelStyle?: TextStyle`. `filter-picker`: `layout: 'row' | 'grid'`, `labelStyle?`. `frame-preview`: `fit: 'contain' | 'cover'`.
 - `configVersion: 0` = draft yang belum pernah dipublikasikan.
-- `admin.pinHash: ''` = PIN belum diatur; Kiosk wajib menolak mode admin. Format hash ditetapkan di F1.
+- `admin.pinHash: ''` = PIN belum diatur; Kiosk wajib menolak mode admin. Format (F1): `pbkdf2-sha256$<iterasi>$<salt base64url>$<hash base64url 32 byte>`, PIN 4–8 digit, dibuat dengan `hashAdminPin()` dan dicek dengan `verifyAdminPin()` (Web Crypto). zod menerima `''` atau format ini saja.
 - `Frame.dynamicElements` hanya boleh `text`, `image`, `shape`, `download-qr` (koordinat px strip).
 - `Slide.elements` hanya elemen statis (`image`, `text`, `shape`, `video`).
 - Kode sesi: 8 karakter dari `ABCDEFGHJKLMNPQRSTUVWXYZ23456789` (`generateSessionCode()`).
@@ -328,6 +339,13 @@ Rekap dihitung dari `sessions` + `payments` + `print_jobs`. Untuk performa, buat
 - `audit_logs` hanya punya `at` (tanpa `updated_at`). Trigger menolak UPDATE/DELETE/TRUNCATE. `booth_configs` juga ditolak UPDATE (immutable).
 - **RLS** (migrasi `0001_rls.sql`): anggota membaca data org-nya; owner/manager menulis tabel konfigurasi (booths, drafts, configs, assets, vouchers, devices); data operasional (sesi, pembayaran, log) hanya baca dari Studio, ditulis API/worker. `payment_credentials`, `drive_connections`, `pairing_codes` tertutup total untuk Studio. Org dibuat lewat `app.create_org()` (SECURITY DEFINER): org + owner + langganan trial.
 - Studio mengakses DB lewat `withUserContext(db, userId, fn)`: transaksi dengan role `authenticated` dan `request.jwt.claims.sub = userId`, sehingga RLS berlaku. API/worker memakai koneksi owner dan wajib filter `org_id` eksplisit.
+
+### B.8 Ketetapan F2 (migrasi `0002_f2_editor.sql`)
+- `assets`: tambah `name` (nama file asli, default `''`) dan `mime_type`. `storage_path` berisi URL publik aset (media lokal atau Supabase Storage). Path penyimpanan: `<orgId>/<sha256>.<ext>`.
+- `pairing_codes`: tambah `token_hash` = sha256 token yang dibuat Kiosk; saat diklaim menjadi `devices.token_hash`. Token asli tidak pernah disimpan di server. Kode 6 digit, berlaku 10 menit, sekali pakai.
+- `templates`: tambah `key` (unik, untuk template bawaan) dan `description`. `config` berisi `BoothConfig` lengkap dengan `boothId: 'template'` dan judul `{{boothName}}`.
+- Publish: versi = `max(version)+1` per booth, `config.configVersion` = versi, audit `booth.publish` / `booth.rollback`, lalu `pg_notify('pb_booth_config', boothId)`. Rollback = publish ulang config versi lama sebagai versi baru.
+- Batas paket ditegakkan di server: `maxBooths` (buat booth), `maxFrames` (publish), `maxDevicesPerBooth` (klaim pairing, hanya device yang belum dicabut).
 
 ---
 

@@ -23,5 +23,6 @@ export async function proxy(request: NextRequest) {
 }
 
 export const config = {
-  matcher: ['/((?!_next/static|_next/image|favicon.ico).*)'],
+  // Uploads and public media skip the proxy (no body cloning, no session needed for media).
+  matcher: ['/((?!_next/static|_next/image|favicon.ico|media/|api/assets).*)'],
 };

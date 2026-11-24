@@ -1,5 +1,12 @@
 import { randomToken, sha256Hex, signDevUserToken, devUserTokenVerifier } from '@pb/crypto';
-import { createBooth, createOrg, devices, withUserContext, type Db } from '@pb/db';
+import {
+  BoothConfigEvents,
+  createBooth,
+  createOrg,
+  devices,
+  withUserContext,
+  type Db,
+} from '@pb/db';
 import { createTestDb, createTestUser, seedPlans } from '@pb/db/testing';
 import { eq } from 'drizzle-orm';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
@@ -30,7 +37,11 @@ beforeAll(async () => {
     .values({ orgId, boothId: booth.id, name: 'Laptop 1', tokenHash: sha256Hex(deviceToken) })
     .returning({ id: devices.id });
   deviceId = d!.id;
-  app = createApp({ db, verifyUserToken: devUserTokenVerifier(SECRET) });
+  app = createApp({
+    db,
+    verifyUserToken: devUserTokenVerifier(SECRET),
+    configEvents: new BoothConfigEvents(),
+  });
 }, 60_000);
 
 afterAll(async () => {

@@ -15,6 +15,13 @@
       "when": 1795473410359,
       "tag": "0001_rls",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1795478383061,
+      "tag": "0002_f2_editor",
+      "breakpoints": true
     }
   ]
 }

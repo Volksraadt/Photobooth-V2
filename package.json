@@ -7,7 +7,7 @@
     "node": ">=22"
   },
   "scripts": {
-    "dev": "turbo run dev --filter=@pb/studio --filter=@pb/api --filter=@pb/db",
+    "dev": "turbo run dev --filter=@pb/studio --filter=@pb/api --filter=@pb/db --filter=@pb/kiosk",
     "build": "turbo run build",
     "test": "turbo run test",
     "test:e2e": "turbo run test:e2e",

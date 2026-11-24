@@ -1,9 +1,9 @@
-import { listMyOrgs, withUserContext } from '@pb/db';
 import { sql } from 'drizzle-orm';
 import { Hono } from 'hono';
+import { cors } from 'hono/cors';
 import { HTTPException } from 'hono/http-exception';
-import { deviceAuth } from './middleware/device-auth';
-import { userAuth } from './middleware/user-auth';
+import { deviceRoutes, pairRoutes } from './routes/device-routes';
+import { studioRoutes } from './routes/studio-routes';
 import type { AppDeps, AppEnv } from './types';
 
 export type { AppDeps } from './types';
@@ -24,6 +24,16 @@ export function createApp(deps: AppDeps) {
 
   app.notFound((c) => c.json({ error: 'not_found' }, 404));
 
+  // Kiosks run on another origin (Tauri / dev server). Token auth only, no cookies.
+  const kioskCors = cors({
+    origin: '*',
+    allowHeaders: ['Authorization', 'Content-Type', 'If-None-Match'],
+    exposeHeaders: ['ETag'],
+    allowMethods: ['GET', 'POST', 'OPTIONS'],
+  });
+  app.use('/device/*', kioskCors);
+  app.use('/pair/*', kioskCors);
+
   app.get('/health', async (c) => {
     let db: 'ok' | 'error' = 'ok';
     try {
@@ -37,24 +47,9 @@ export function createApp(deps: AppDeps) {
     );
   });
 
-  // --- Device API (Kiosk / Agent). Device token auth; every query scoped to c.var.device.orgId.
-  const device = new Hono<AppEnv>();
-  device.use('*', deviceAuth);
-  device.get('/me', (c) => {
-    const d = c.var.device;
-    return c.json({ id: d.id, name: d.name, orgId: d.orgId, boothId: d.boothId });
-  });
-  app.route('/device', device);
-
-  // --- Studio-facing API (sensitive actions). User token auth; DB access via RLS.
-  const studio = new Hono<AppEnv>();
-  studio.use('*', userAuth);
-  studio.get('/me', async (c) => {
-    const user = c.var.user;
-    const orgs = await withUserContext(deps.db, user.userId, (tx) => listMyOrgs(tx));
-    return c.json({ user: { id: user.userId, email: user.email }, orgs });
-  });
-  app.route('/studio', studio);
+  app.route('/pair', pairRoutes());
+  app.route('/device', deviceRoutes());
+  app.route('/studio', studioRoutes());
 
   return app;
 }

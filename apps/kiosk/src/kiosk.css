@@ -1,0 +1,176 @@
+html,
+body,
+#root {
+  margin: 0;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  background: #000000;
+  overscroll-behavior: none;
+}
+
+body {
+  font-family:
+    system-ui,
+    -apple-system,
+    'Segoe UI',
+    Roboto,
+    sans-serif;
+  -webkit-font-smoothing: antialiased;
+  touch-action: pan-x pan-y;
+}
+
+.pb-kiosk-mode,
+.pb-kiosk-mode * {
+  cursor: none !important;
+}
+
+/* System screens (admin, PIN, fatal fallback): operator UI, not owner-designed. */
+.sys {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(2, 6, 23, 0.92);
+  color: #f8fafc;
+  font-size: 18px;
+  line-height: 1.4;
+}
+.sys-card {
+  width: min(92vw, 760px);
+  max-height: 92vh;
+  overflow: auto;
+  background: #0f172a;
+  border: 1px solid #1e293b;
+  border-radius: 20px;
+  padding: 28px;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
+}
+.sys h1 {
+  margin: 0 0 8px;
+  font-size: 28px;
+}
+.sys h2 {
+  margin: 24px 0 10px;
+  font-size: 18px;
+  color: #cbd5e1;
+}
+.sys p {
+  margin: 0 0 12px;
+  color: #cbd5e1;
+}
+.sys-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: center;
+}
+.sys-btn {
+  min-height: 52px;
+  padding: 0 20px;
+  border-radius: 12px;
+  border: 1px solid #334155;
+  background: #1e293b;
+  color: #f8fafc;
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}
+.sys-btn:active {
+  background: #334155;
+}
+.sys-btn[disabled] {
+  opacity: 0.45;
+  cursor: default;
+}
+.sys-btn.primary {
+  background: #db2777;
+  border-color: #db2777;
+}
+.sys-muted {
+  color: #94a3b8;
+  font-size: 15px;
+}
+.sys-error {
+  color: #fca5a5;
+}
+.sys-keypad {
+  display: grid;
+  grid-template-columns: repeat(3, 88px);
+  gap: 12px;
+  justify-content: center;
+  margin-top: 16px;
+}
+.sys-keypad .sys-btn {
+  height: 72px;
+  font-size: 26px;
+}
+.sys-dots {
+  display: flex;
+  justify-content: center;
+  gap: 14px;
+  height: 24px;
+  margin: 12px 0;
+}
+.sys-dots span {
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  border: 2px solid #94a3b8;
+}
+.sys-dots span.on {
+  background: #f8fafc;
+  border-color: #f8fafc;
+}
+.sys-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 15px;
+}
+.sys-table td,
+.sys-table th {
+  text-align: left;
+  padding: 8px 6px;
+  border-bottom: 1px solid #1e293b;
+}
+.sys-preview {
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  background: #000000;
+  border-radius: 12px;
+  object-fit: contain;
+}
+
+.dev-tools {
+  position: fixed;
+  left: 8px;
+  bottom: 8px;
+  z-index: 40;
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  padding: 6px;
+  border-radius: 10px;
+  background: rgba(15, 23, 42, 0.8);
+  color: #e2e8f0;
+  font:
+    12px/1.2 ui-monospace,
+    monospace;
+}
+.dev-tools button {
+  font: inherit;
+  padding: 6px 8px;
+  border-radius: 6px;
+  border: 1px solid #475569;
+  background: #1e293b;
+  color: inherit;
+  cursor: pointer;
+}
+.dev-tools button.pay {
+  background: #16a34a;
+  border-color: #16a34a;
+  color: #ffffff;
+  font-weight: 700;
+}

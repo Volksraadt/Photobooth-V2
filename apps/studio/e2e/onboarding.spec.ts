@@ -21,6 +21,11 @@ async function createOrgAndBooth(page: Page, org: string, booth: string): Promis
   await expect(page).toHaveURL(/\/booths\/[a-z0-9]+$/);
   await expect(page.getByTestId('booth-name')).toHaveText(booth);
   await expect(page.getByTestId('draft-valid')).toBeVisible();
+  // Page previews use the shared renderer (same as the Kiosk), in editor mode.
+  const capture = page.getByTestId('preview-capture');
+  await expect(capture.locator('[data-pb-element-type="camera-view"]')).toContainText('Kamera');
+  await expect(capture.locator('[data-pb-slot]')).toHaveCount(4);
+  await expect(page.getByTestId('preview-cover')).toContainText(booth);
   return page.url();
 }
 

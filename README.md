@@ -19,12 +19,30 @@ cp .env.example .env   # isi SECRET_MASTER_KEY dan DEV_AUTH_SECRET (lihat koment
 pnpm dev               # Postgres lokal (:54329) + Studio (:3000) + API (:8787)
 ```
 
-`pnpm dev` menjalankan Postgres bawaan (`embedded-postgres`, data di `packages/db/.data/`), menerapkan migrasi, dan mengisi seed. Login demo: `demo@photobooth.local` / `demo12345`.
+`pnpm dev` menjalankan Postgres bawaan (`embedded-postgres`, data di `packages/db/.data/`), menerapkan migrasi, dan mengisi seed. Login demo: `demo@photobooth.local` / `demo12345`. Kiosk ikut jalan di `http://localhost:5173`.
+
+### Studio editor + perangkat (F2)
+- Buat booth dari template di `/booths`, lalu **Buka editor** (`/booths/<id>/editor`): halaman, slide Tutorial, frame, filter, pengaturan; undo/redo, autosave, Pratinjau, Publish.
+- Pasang Kiosk ke booth: buka `http://localhost:5173/?source=api` (tambahkan `&capture=mock&dev=1` tanpa webcam). Kiosk menampilkan kode 6 digit → di Studio, halaman booth → **Perangkat** → masukkan kode. Publish berikutnya tampil di Kiosk dalam beberapa detik.
+- Riwayat versi dan rollback ada di halaman booth. Aset upload (dev) tersimpan di `.data/assets/`.
+- `pnpm --filter @pb/studio test:e2e` butuh stack lengkap (`pnpm dev`, termasuk Kiosk di :5173).
+
+### Kiosk (F1)
+```sh
+pnpm --filter @pb/kiosk dev          # http://localhost:5173 (webcam laptop)
+# http://localhost:5173/?capture=mock  → kamera tiruan, tanpa webcam
+# ?kiosk=1 → layar penuh + kursor disembunyikan (default di build produksi)
+```
+- Config dibaca dari `apps/kiosk/booth-config.local.json` (dibuat otomatis dari config default; edit lalu simpan, Kiosk me-reload). `pnpm --filter @pb/kiosk config:init` mengembalikan ke default.
+- Mode dev: panel kecil kiri bawah berisi **Simulasikan lunas** (payment mock) dan **Putus kamera**.
+- Mode admin: ketuk 5× pojok kiri atas, PIN dev `1234`. Berisi tes kamera, sesi gratis, dan unduh foto sesi yang tersimpan (IndexedDB).
+- `pnpm --filter @pb/kiosk test:e2e` menjalankan Playwright (webcam tiruan Chromium + kamera mock).
 
 | Perintah | Fungsi |
 |---|---|
 | `pnpm test` | unit + DB test (PGlite, tanpa server) |
 | `pnpm --filter @pb/studio test:e2e` | Playwright Studio (menjalankan `pnpm dev` jika belum jalan) |
+| `pnpm --filter @pb/kiosk test:e2e` | Playwright Kiosk (server Vite sendiri di :5174 dengan config default baru) |
 | `pnpm typecheck` / `pnpm lint` / `pnpm format:check` | pemeriksaan statis (juga di CI) |
 | `pnpm db:generate` | buat migrasi Drizzle dari `packages/db/src/schema` |
 | `pnpm db:migrate` / `pnpm db:seed` | terapkan migrasi / seed ke `DATABASE_URL` |

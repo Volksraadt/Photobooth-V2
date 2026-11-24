@@ -1,4 +1,5 @@
-import { listBooths } from '@pb/db';
+import { getOrgPlan, listBooths, listTemplates } from '@pb/db';
+import type { BoothConfig } from '@pb/schema';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@pb/ui';
 import Link from 'next/link';
 import { asUser, requireOrg } from '@/lib/org';
@@ -6,7 +7,13 @@ import { CreateBoothForm } from './create-booth-form';
 
 export default async function BoothsPage() {
   const { user, org } = await requireOrg();
-  const booths = await asUser(user, (tx) => listBooths(tx, org.id));
+  const { booths, templates, plan } = await asUser(user, async (tx) => ({
+    booths: await listBooths(tx, org.id),
+    templates: await listTemplates(tx),
+    plan: await getOrgPlan(tx, org.id),
+  }));
+  const maxBooths = plan?.limits.maxBooths ?? null;
+  const atLimit = maxBooths !== null && booths.length >= maxBooths;
   const canEdit = org.role !== 'operator';
 
   return (
@@ -23,11 +30,20 @@ export default async function BoothsPage() {
           <CardHeader>
             <CardTitle className="text-base">Booth baru</CardTitle>
             <CardDescription>
-              Booth dibuat dengan desain default yang bisa Anda ubah di editor.
+              Pilih template sebagai titik awal; semua bisa diubah di editor.
             </CardDescription>
           </CardHeader>
           <CardContent>
-            <CreateBoothForm defaultTimezone="Asia/Jakarta" />
+            {atLimit ? (
+              <p className="text-sm text-amber-700" data-testid="booth-limit">
+                Paket {plan?.name} dibatasi {maxBooths} booth. Upgrade paket untuk menambah booth.
+              </p>
+            ) : (
+              <CreateBoothForm
+                defaultTimezone="Asia/Jakarta"
+                templates={templates.map((t) => ({ ...t, config: t.config as BoothConfig }))}
+              />
+            )}
           </CardContent>
         </Card>
       )}

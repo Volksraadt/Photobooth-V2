@@ -4,12 +4,31 @@
   "private": true,
   "type": "module",
   "description": "Booth screen: Vite + React, wrapped in Tauri",
-  "exports": {
-    ".": "./src/index.ts"
-  },
   "scripts": {
+    "dev": "tsx scripts/ensure-dev-config.ts && vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "config:init": "tsx scripts/ensure-dev-config.ts --reset",
     "typecheck": "tsc --noEmit -p tsconfig.json",
-    "lint": "eslint src",
-    "test": "vitest run --passWithNoTests"
+    "lint": "eslint src scripts e2e",
+    "test": "vitest run",
+    "test:e2e": "playwright test"
+  },
+  "dependencies": {
+    "@pb/capture": "workspace:*",
+    "@pb/flow": "workspace:*",
+    "@pb/renderer": "workspace:*",
+    "@pb/schema": "workspace:*",
+    "@xstate/react": "^6.1.0",
+    "react": "^19.3.1",
+    "react-dom": "^19.3.1",
+    "xstate": "^5.33.4"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.65.1",
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
+    "@vitejs/plugin-react": "^6.3.0",
+    "vite": "^8.3.8"
   }
 }

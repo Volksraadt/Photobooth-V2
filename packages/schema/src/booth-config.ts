@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { ADMIN_PIN_HASH_RE } from './admin-pin';
 import { ColorSchema, IdSchema, TimezoneSchema } from './common';
 import { PaymentMethodSchema } from './elements';
 import { FilterSchema } from './filter';
@@ -97,7 +98,11 @@ export const BoothConfigSchema = z.object({
   assets: z.array(AssetRefSchema),
   admin: z.object({
     /** Empty string = PIN not set; kiosk must refuse admin mode until one is set. */
-    pinHash: z.string(),
+    /** Format: see admin-pin.ts (`pbkdf2-sha256$<iter>$<salt>$<hash>`). */
+    pinHash: z.union([
+      z.literal(''),
+      z.string().regex(ADMIN_PIN_HASH_RE, 'Format hash PIN admin tidak dikenal'),
+    ]),
   }),
 });
 export type BoothConfig = z.infer<typeof BoothConfigSchema>;

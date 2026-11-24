@@ -1,6 +1,6 @@
 import { createId } from '@paralleldrive/cuid2';
 import { hashPassword } from '@pb/crypto';
-import { createDefaultBoothConfig } from '@pb/schema';
+import { BUILTIN_TEMPLATES, buildTemplateConfig, createDefaultBoothConfig } from '@pb/schema';
 import { eq, sql } from 'drizzle-orm';
 import { AUTH_SHIM_MARKER } from './auth-shim';
 import {
@@ -11,6 +11,7 @@ import {
   orgs,
   plans,
   subscriptions,
+  templates,
   type PlanFeatures,
   type PlanLimits,
 } from './schema';
@@ -87,6 +88,23 @@ export async function seedPlans(db: Db): Promise<void> {
   }
 }
 
+/** Built-in public templates (upsert by key). */
+export async function seedTemplates(db: Db): Promise<void> {
+  for (const t of BUILTIN_TEMPLATES) {
+    const values = {
+      key: t.key,
+      name: t.name,
+      description: t.description,
+      config: buildTemplateConfig(t),
+      isPublic: true,
+    };
+    await db
+      .insert(templates)
+      .values(values)
+      .onConflictDoUpdate({ target: templates.key, set: values });
+  }
+}
+
 export async function isAuthShim(db: Db): Promise<boolean> {
   const rows = await db.execute<{ marker: string | null }>(
     sql`select obj_description('auth'::regnamespace, 'pg_namespace') as marker`,
@@ -116,6 +134,7 @@ export async function seed(
   db: Db,
 ): Promise<{ orgId: string; boothId: string; userId: string | null }> {
   await seedPlans(db);
+  await seedTemplates(db);
 
   const shim = await isAuthShim(db);
   const userId = shim ? await createShimUser(db, DEMO_USER.email, DEMO_USER.password) : null;

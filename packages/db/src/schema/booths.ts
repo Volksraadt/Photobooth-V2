@@ -109,6 +109,8 @@ export const pairingCodes = pgTable('pairing_codes', {
   id: id(),
   code: text('code').notNull().unique(),
   deviceFingerprint: text('device_fingerprint').notNull(),
+  /** sha256 of the device token the kiosk generated; becomes devices.token_hash on claim. */
+  tokenHash: text('token_hash'),
   expiresAt: tz('expires_at').notNull(),
   claimedBoothId: text('claimed_booth_id').references(() => booths.id, { onDelete: 'cascade' }),
   ...timestamps,
@@ -120,6 +122,9 @@ export const assets = pgTable(
     id: id(),
     orgId: orgId(),
     kind: assetKind('kind').notNull(),
+    /** Original file name (shown in the library). */
+    name: text('name').notNull().default(''),
+    mimeType: text('mime_type'),
     storagePath: text('storage_path').notNull(),
     sha256: text('sha256').notNull(),
     bytes: integer('bytes').notNull(),
@@ -133,7 +138,10 @@ export const assets = pgTable(
 /** Global starter templates. */
 export const templates = pgTable('templates', {
   id: id(),
+  /** Stable key of built-in templates (seed upserts by key). */
+  key: text('key').unique(),
   name: text('name').notNull(),
+  description: text('description'),
   preview: text('preview'),
   config: jsonb('config').$type<Partial<BoothConfig>>().notNull(),
   isPublic: boolean('is_public').notNull().default(false),
