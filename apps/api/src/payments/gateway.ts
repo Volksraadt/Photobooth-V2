@@ -25,18 +25,50 @@ export type PaymentGateway = {
 export const credentialAad = (orgId: string, env: ProviderEnv) =>
   `org:${orgId}:payment:midtrans:${env}`;
 
-export type StoredSecret = { serverKey: string };
+/**
+ * Encrypted JSON in payment_credentials.encrypted_secret. `signatureKey` = Midtrans Signature
+ * Secret Key (signs notifications since 2026-10-28); `previousSignatureKey` keeps the replaced one
+ * so notifications Midtrans retries with the old signature still verify.
+ */
+export type StoredSecret = {
+  serverKey: string;
+  signatureKey?: string;
+  previousSignatureKey?: string;
+};
 
 export function encryptCredential(
   box: SecretBox,
   orgId: string,
   env: ProviderEnv,
-  serverKey: string,
+  secret: StoredSecret | string,
 ): string {
-  return box.encrypt(
-    JSON.stringify({ serverKey } satisfies StoredSecret),
-    credentialAad(orgId, env),
-  );
+  const value: StoredSecret = typeof secret === 'string' ? { serverKey: secret } : secret;
+  return box.encrypt(JSON.stringify(value), credentialAad(orgId, env));
+}
+
+export function decryptCredential(box: SecretBox, cred: CredentialRow): StoredSecret {
+  return JSON.parse(
+    box.decrypt(cred.encryptedSecret, credentialAad(cred.orgId, cred.env)),
+  ) as StoredSecret;
+}
+
+/**
+ * Applies a save to the stored secret. Empty fields keep the stored value. Returns null when
+ * nothing secret changed. A new signature key moves the old one to `previousSignatureKey`.
+ */
+export function mergeStoredSecret(
+  stored: StoredSecret | null,
+  input: { serverKey?: string; signatureKey?: string },
+): StoredSecret | null {
+  if (!input.serverKey && !input.signatureKey) return null;
+  const serverKey = input.serverKey || stored?.serverKey;
+  if (!serverKey) return null;
+  const next: StoredSecret = { ...stored, serverKey };
+  if (input.signatureKey && input.signatureKey !== stored?.signatureKey) {
+    next.signatureKey = input.signatureKey;
+    if (stored?.signatureKey) next.previousSignatureKey = stored.signatureKey;
+  }
+  return next;
 }
 
 /**
@@ -51,12 +83,9 @@ export function createPaymentGateway(opts: {
   const mocks = new Map<string, MockProvider>();
   const MOCK_KEY = 'mock-server-key';
 
-  const serverKeyOf = (cred: CredentialRow): string => {
+  const secretOf = (cred: CredentialRow): StoredSecret => {
     if (!opts.secretBox) throw new Error('SECRET_MASTER_KEY belum diatur di API');
-    const secret = JSON.parse(
-      opts.secretBox.decrypt(cred.encryptedSecret, credentialAad(cred.orgId, cred.env)),
-    ) as StoredSecret;
-    return secret.serverKey;
+    return decryptCredential(opts.secretBox, cred);
   };
 
   const mockFor = (orgId: string, env: ProviderEnv, serverKey = MOCK_KEY) => {
@@ -66,15 +95,18 @@ export function createPaymentGateway(opts: {
     return m;
   };
 
-  const forCredential = (cred: CredentialRow): PaymentProvider =>
-    opts.mode === 'mock'
-      ? mockFor(cred.orgId, cred.env, serverKeyOf(cred))
+  const forCredential = (cred: CredentialRow): PaymentProvider => {
+    const secret = secretOf(cred);
+    return opts.mode === 'mock'
+      ? mockFor(cred.orgId, cred.env, secret.serverKey)
       : createMidtransProvider({
-          serverKey: serverKeyOf(cred),
+          serverKey: secret.serverKey,
+          signatureKeys: [secret.signatureKey, secret.previousSignatureKey],
           env: cred.env,
           fetch: opts.fetch,
           decodeQrImage,
         });
+  };
 
   return {
     mode: opts.mode,

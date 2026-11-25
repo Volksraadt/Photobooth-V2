@@ -19,7 +19,7 @@ import { requireOrgEditor } from '../middleware/org-access';
 import { studioBillingRoutes } from './billing-routes';
 import { studioDriveCompleteRoutes, studioDriveRoutes } from './drive-routes';
 import { userAuth } from '../middleware/user-auth';
-import { encryptCredential } from '../payments/gateway';
+import { decryptCredential, encryptCredential, mergeStoredSecret } from '../payments/gateway';
 import type { AppEnv } from '../types';
 import { webhookUrl } from './payment-routes';
 
@@ -134,12 +134,20 @@ export function studioRoutes() {
         503,
       );
     }
-    const { env, serverKey, clientKey, merchantId, active } = body.data;
+    const { env, serverKey, signatureKey, clientKey, merchantId, active } = body.data;
+    // Merge with the stored secret so either key can be updated alone (empty = keep).
+    const existing = await getCredential(c.var.deps.db, orgId, env);
+    const stored = existing ? decryptCredential(box, existing) : null;
+    const next = mergeStoredSecret(stored, { serverKey, signatureKey });
     try {
       const saved = await saveCredential(c.var.deps.db, {
         orgId,
         env,
-        encryptedSecret: serverKey ? encryptCredential(box, orgId, env, serverKey) : null,
+        encryptedSecret: next ? encryptCredential(box, orgId, env, next) : null,
+        secretChanges: {
+          serverKey: !!next && next.serverKey !== stored?.serverKey,
+          signatureKey: !!next && next.signatureKey !== stored?.signatureKey,
+        },
         clientKey: clientKey || null,
         merchantId: merchantId || null,
         active,
@@ -181,6 +189,8 @@ const MidtransBody = z.object({
   env: z.enum(['sandbox', 'production']),
   /** Empty = keep the stored key. */
   serverKey: z.string().trim().max(200).optional(),
+  /** Midtrans Signature Secret Key (verifies notifications). Empty = keep the stored key. */
+  signatureKey: z.string().trim().max(200).optional(),
   clientKey: z.string().trim().max(200).optional(),
   merchantId: z.string().trim().max(100).optional(),
   active: z.boolean(),

@@ -29,7 +29,8 @@ akun Midtrans masing-masing owner (Studio → Integrasi).
    (Settings → Payment → QRIS/GoPay).
 2. Settings → Access Keys → salin **Server Key** sandbox.
 3. `.env` server API **dan** worker: `PB_BILLING_MIDTRANS_SERVER_KEY=SB-Mid-server-…`,
-   `PB_BILLING_MIDTRANS_ENV=sandbox`. Jangan isi `PB_BILLING_PROVIDER` (atau kosongkan).
+   `PB_BILLING_MIDTRANS_ENV=sandbox`, `PB_BILLING_MIDTRANS_SIGNATURE_KEY=<Signature Secret Key>` (tanpa ini
+   notifikasi `/webhooks/billing` ditolak `bad signature`). Jangan isi `PB_BILLING_PROVIDER` (atau kosongkan).
 4. Buka tunnel ke API (`cloudflared tunnel --url http://localhost:8787`) dan set `PB_PUBLIC_API_URL` ke URL
    tunnel. API mengirim URL notifikasi per transaksi `<PB_PUBLIC_API_URL>/webhooks/billing`. Isi juga di
    Settings → Payment → Notification URL sebagai cadangan.

@@ -19,6 +19,7 @@ export async function saveMidtransAction(_prev: FormState, form: FormData): Prom
   const org = await editorOrg();
   const env = field(form, 'env') === 'production' ? 'production' : 'sandbox';
   const serverKey = field(form, 'serverKey').trim();
+  const signatureKey = field(form, 'signatureKey').trim();
   let res: Response;
   try {
     res = await apiFetch(`/studio/orgs/${org.id}/integrations/midtrans`, {
@@ -26,6 +27,7 @@ export async function saveMidtransAction(_prev: FormState, form: FormData): Prom
       body: JSON.stringify({
         env,
         ...(serverKey ? { serverKey } : {}),
+        ...(signatureKey ? { signatureKey } : {}),
         clientKey: field(form, 'clientKey').trim(),
         merchantId: field(form, 'merchantId').trim(),
         active: field(form, 'active') === 'on',

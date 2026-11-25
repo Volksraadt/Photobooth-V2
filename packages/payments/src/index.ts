@@ -6,5 +6,5 @@ export {
   MIDTRANS_BASE,
 } from './midtrans';
 export { createMockProvider, type MockProvider } from './mock';
-export { midtransSignature, parseIdr } from './signature';
+export { matchesMidtransSignature, midtransSignature, parseIdr } from './signature';
 export { decodeQrImage } from './qr-decode';

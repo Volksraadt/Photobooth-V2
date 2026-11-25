@@ -32,6 +32,8 @@ export const DISABLED_BILLING: BillingGateway = {
 export function createBillingGateway(opts: {
   mode: 'midtrans' | 'mock';
   serverKey?: string;
+  /** Platform Signature Secret Key(s) for /webhooks/billing (current, previous). */
+  signatureKeys?: readonly (string | undefined)[];
   env?: ProviderEnv;
   fetch?: typeof fetch;
 }): BillingGateway {
@@ -46,6 +48,7 @@ export function createBillingGateway(opts: {
     env,
     provider: createMidtransProvider({
       serverKey: opts.serverKey,
+      signatureKeys: opts.signatureKeys,
       env,
       fetch: opts.fetch,
       decodeQrImage,
@@ -67,6 +70,10 @@ export function billingGatewayFromEnv(
   return createBillingGateway({
     mode: 'midtrans',
     serverKey,
+    signatureKeys: [
+      env.PB_BILLING_MIDTRANS_SIGNATURE_KEY,
+      env.PB_BILLING_MIDTRANS_PREVIOUS_SIGNATURE_KEY,
+    ],
     env: env.PB_BILLING_MIDTRANS_ENV === 'production' ? 'production' : 'sandbox',
   });
 }

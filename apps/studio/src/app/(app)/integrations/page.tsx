@@ -139,8 +139,9 @@ export default async function IntegrationsPage({
                 lingkungan <b>Sandbox</b> di pojok kiri atas.
               </li>
               <li>
-                Buka <b>Settings → Access Keys</b>, salin Merchant ID, Client Key, dan Server Key ke
-                formulir di bawah (Sandbox dan Production punya key berbeda).
+                Buka <b>Settings → Access Keys</b>, salin Merchant ID, Client Key, Server Key, dan
+                Signature Secret Key ke formulir di bawah (Sandbox dan Production punya key
+                berbeda). Server Key hanya ditampilkan sekali saat dibuat.
               </li>
               <li>
                 Pastikan metode pembayaran <b>QRIS</b> aktif untuk akun Anda (Settings → Payment

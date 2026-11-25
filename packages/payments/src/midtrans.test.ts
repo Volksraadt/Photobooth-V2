@@ -141,6 +141,33 @@ describe('midtrans provider', () => {
     expect(await other.verifyWebhook(new Headers(), body)).toBeNull();
   });
 
+  it('verifies notifications signed with the Signature Secret Key (current or previous)', async () => {
+    const SIG = 'sig-secret-new';
+    const OLD = 'sig-secret-old';
+    const p = createMidtransProvider({
+      serverKey: SERVER_KEY,
+      signatureKeys: [SIG, OLD, undefined],
+      env: 'sandbox',
+    });
+    const body = (key: string) => ({
+      order_id: 'order-10',
+      status_code: '200',
+      gross_amount: '35000.00',
+      transaction_status: 'settlement',
+      signature_key: midtransSignature('order-10', '200', '35000.00', key),
+    });
+    expect(await p.verifyWebhook(new Headers(), body(SIG))).toMatchObject({ status: 'paid' });
+    expect(await p.verifyWebhook(new Headers(), body(OLD))).toMatchObject({ status: 'paid' });
+    // Accounts from before 2026-10-28 sign with a key equal to the server key.
+    expect(await p.verifyWebhook(new Headers(), body(SERVER_KEY))).toMatchObject({
+      status: 'paid',
+    });
+    expect(await p.verifyWebhook(new Headers(), body('someone-else'))).toBeNull();
+    // Without a configured signature key, the real Midtrans signature is rejected.
+    const legacy = createMidtransProvider({ serverKey: SERVER_KEY, env: 'sandbox' });
+    expect(await legacy.verifyWebhook(new Headers(), body(SIG))).toBeNull();
+  });
+
   it('cancel falls back to the real status when Midtrans refuses (already settled)', async () => {
     const f = fakeFetch((url) =>
       url.endsWith('/cancel')

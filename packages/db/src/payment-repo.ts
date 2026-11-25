@@ -97,6 +97,8 @@ export async function saveCredential(
     orgId: string;
     env: 'sandbox' | 'production';
     encryptedSecret: string | null;
+    /** For the audit log only (which secrets changed); default: server key = !!encryptedSecret. */
+    secretChanges?: { serverKey: boolean; signatureKey: boolean };
     clientKey: string | null;
     merchantId: string | null;
     active: boolean;
@@ -153,7 +155,8 @@ export async function saveCredential(
       after: {
         merchantId: input.merchantId,
         isActive: values.isActive,
-        serverKeyChanged: !!input.encryptedSecret,
+        serverKeyChanged: input.secretChanges?.serverKey ?? !!input.encryptedSecret,
+        signatureKeyChanged: input.secretChanges?.signatureKey ?? false,
       },
     });
     return (await getCredential(tx, input.orgId, input.env))!;

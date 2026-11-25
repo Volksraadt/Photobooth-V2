@@ -1,5 +1,5 @@
 import { randomBytes } from 'node:crypto';
-import { constantTimeEqualHex, midtransSignature, parseIdr } from './signature';
+import { matchesMidtransSignature, parseIdr } from './signature';
 import {
   PaymentProviderError,
   type ConnectionTestResult,
@@ -13,6 +13,12 @@ import {
 
 export type MidtransOptions = {
   serverKey: string;
+  /**
+   * Keys that may sign HTTP notifications: the Signature Secret Key and, while Midtrans still
+   * retries notifications signed before a regeneration, the previous one. The server key is
+   * always accepted too (accounts created before 2026-10-28 sign with a key equal to it).
+   */
+  signatureKeys?: readonly (string | null | undefined)[];
   env: ProviderEnv;
   /** Injected in tests. */
   fetch?: typeof fetch;
@@ -225,8 +231,15 @@ export function createMidtransProvider(opts: MidtransOptions): PaymentProvider {
       ) {
         return null;
       }
-      const expected = midtransSignature(order_id, status_code, gross_amount, opts.serverKey);
-      if (!constantTimeEqualHex(expected, signature_key)) return null;
+      const fields = {
+        orderId: order_id,
+        statusCode: status_code,
+        grossAmount: gross_amount,
+        signature: signature_key,
+      };
+      if (!matchesMidtransSignature(fields, [...(opts.signatureKeys ?? []), opts.serverKey])) {
+        return null;
+      }
       return toUpdate(body, order_id);
     },
 

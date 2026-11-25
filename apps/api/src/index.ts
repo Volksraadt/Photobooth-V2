@@ -48,6 +48,11 @@ console.log(
 console.log(
   `[api] subscription billing: ${billing.mode}${billing.mode === 'disabled' ? ' (set PB_BILLING_MIDTRANS_SERVER_KEY of the PLATFORM Midtrans account)' : ` (${billing.env})`}`,
 );
+if (billing.mode === 'midtrans' && !process.env.PB_BILLING_MIDTRANS_SIGNATURE_KEY) {
+  console.warn(
+    '[api] PB_BILLING_MIDTRANS_SIGNATURE_KEY not set: /webhooks/billing only accepts notifications signed with the server key (Midtrans signs with the Signature Secret Key since 2026-10-28)',
+  );
+}
 console.log(
   `[api] payments: ${paymentMode}${secretBox ? '' : ' (SECRET_MASTER_KEY missing: credentials cannot be saved)'}`,
 );

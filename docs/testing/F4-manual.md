@@ -24,7 +24,7 @@ di kolom paling kanan setiap tabel.
 | # | Langkah | Hasil yang diharapkan | Hasil |
 |---|---|---|---|
 | 1.1 | Buka menu **Integrasi** | Panduan onboarding 5 langkah, URL webhook `…/webhooks/midtrans/<orgId>` tampil | |
-| 1.2 | Isi Merchant ID, Client key, Server key **Sandbox** (Dashboard Midtrans Sandbox → Settings → Access Keys), centang "Pakai lingkungan ini", Simpan | "tersimpan terenkripsi"; badge **aktif** pada Sandbox | |
+| 1.2 | Isi Merchant ID, Client key, Server key dan **Signature secret key** **Sandbox** (Dashboard Midtrans Sandbox → Settings → Access Keys; server key cukup izin Core API Write + Cancel Write), centang "Pakai lingkungan ini", Simpan | "tersimpan terenkripsi"; badge **aktif** pada Sandbox | |
 | 1.3 | Reload halaman | Kolom server key kosong dengan teks "Tersimpan terenkripsi…"; key tidak terlihat di halaman maupun View Source | |
 | 1.4 | **Tes koneksi** | "Terhubung ke Midtrans sandbox." Status: terhubung | |
 | 1.5 | Ubah server key menjadi salah (mis. tambah huruf), Simpan, Tes koneksi | "Server key ditolak Midtrans sandbox…" Status: gagal. Kembalikan key yang benar | |

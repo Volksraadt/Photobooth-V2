@@ -72,6 +72,27 @@ export function MidtransForm({
           lagi atau dikirim ke perangkat booth.
         </p>
       </div>
+      <div className="space-y-1">
+        <Label htmlFor={id('signature')}>Signature secret key</Label>
+        <Input
+          id={id('signature')}
+          name="signatureKey"
+          type="password"
+          autoComplete="off"
+          placeholder={
+            credential
+              ? 'Kosongkan untuk tetap memakai key yang tersimpan'
+              : 'Dari Settings → Access Keys'
+          }
+          maxLength={200}
+        />
+        <p className="text-xs text-muted-foreground">
+          Dipakai untuk memverifikasi notifikasi pembayaran dari Midtrans (sejak 28 Oktober 2026
+          Midtrans menandatangani notifikasi dengan key ini, bukan server key). Tanpa key ini status
+          lunas tetap diketahui lewat pengecekan berkala, hanya sedikit lebih lambat. Saat key
+          diganti, key lama tetap diterima sementara.
+        </p>
+      </div>
       <label className="flex items-center gap-2 text-sm">
         <input
           type="checkbox"
