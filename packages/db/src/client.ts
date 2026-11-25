@@ -18,7 +18,8 @@ export function createDb(
     // instance is frozen between requests: a socket kept across a freeze is dead on resume and
     // postgres.js would hang on it (Supabase KB "hanging queries in Vercel Serverless
     // Functions"). There, idle connections close after 2 s while the function is kept alive a
-    // little after each response (keepAliveAfterResponse in apps/api and apps/studio).
+    // little after each response (keepAliveAfterResponse in apps/api, after() in apps/studio;
+    // docs/decisions.md 2026-11-26 "Koneksi DB di Vercel").
     idle_timeout: process.env.VERCEL ? SERVERLESS_IDLE_SECONDS : 30,
     // Never reuse a connection for long on serverless (pooler may drop it silently).
     max_lifetime: process.env.VERCEL ? 60 : null,
