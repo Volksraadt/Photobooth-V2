@@ -11,6 +11,8 @@ export function createDb(
     // Supabase poolers cap clients per project (Free session pooler: 15), shared by Studio, API
     // and worker: lower it with PB_DB_POOL_MAX.
     max: opts.max ?? (Number(process.env.PB_DB_POOL_MAX) || 10),
+    // Close idle connections (seconds) so pooler slots come back between bursts.
+    idle_timeout: 30,
     // Supabase transaction pooler does not support prepared statements.
     prepare: !url.includes('pooler.supabase.com'),
     onnotice: () => {},
