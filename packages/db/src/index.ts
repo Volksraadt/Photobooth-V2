@@ -1,6 +1,7 @@
 export * from './schema';
 export type { Db, Schema, Tx } from './types';
-export { createDb, getDb } from './client';
+export { createDb, getDb, SERVERLESS_IDLE_SECONDS } from './client';
+export { keepAliveAfterResponse } from './serverless';
 export { withUserContext } from './user-context';
 export * from './repo';
 export * from './booth-repo';
