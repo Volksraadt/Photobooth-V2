@@ -22,8 +22,17 @@ const BASE = {
 
 type Palette = typeof BASE;
 
-/** Element types whose colors must stay readable/scannable (QR on white). */
-const KEEP_COLORS = new Set<Element['type']>(['qris', 'download-qr', 'voucher-input']);
+/**
+ * Element types whose colors must stay readable/scannable: QR codes on white, and elements drawn
+ * over the live camera image (dark whatever the theme), such as the countdown.
+ */
+const KEEP_COLORS = new Set<Element['type']>([
+  'qris',
+  'download-qr',
+  'voucher-input',
+  'countdown',
+  'camera-view',
+]);
 
 function recolor(config: BoothConfig, to: Palette): BoothConfig {
   const map = new Map<string, string>(
