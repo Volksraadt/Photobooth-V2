@@ -3,12 +3,16 @@ import type { BoothConfig } from '@pb/schema';
 import { eq } from 'drizzle-orm';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import {
+  archiveBooth,
+  BoothRemovalError,
   createBoothFromTemplate,
+  deleteUnusedBooth,
   getConfigVersion,
   listConfigVersions,
   listTemplates,
   PlanLimitError,
   publishConfig,
+  restoreBooth,
   saveDraft,
 } from './booth-repo';
 import {
@@ -20,7 +24,7 @@ import {
   recordHeartbeat,
 } from './device-repo';
 import { createOrg, getBooth } from './repo';
-import { boothDrafts, devices, plans, subscriptions } from './schema';
+import { booths, boothDrafts, devices, plans, sessions, subscriptions } from './schema';
 import { createTestDb, createTestUser, seedPlans, seedTemplates } from './testing';
 import type { Db } from './types';
 import { withUserContext } from './user-context';
@@ -224,5 +228,55 @@ describe('draft, publish, versions, rollback', () => {
     ).rejects.toBeInstanceOf(PlanLimitError);
     const [pro] = await db.select().from(plans).where(eq(plans.code, 'pro'));
     await db.update(subscriptions).set({ planId: pro!.id }).where(eq(subscriptions.orgId, orgId));
+  });
+});
+
+describe('archive, restore, delete', () => {
+  it('archive frees a plan slot and revokes devices; delete only without sessions', async () => {
+    const owner = await createTestUser(db, 'owner-archive@f2.test');
+    const org = (await withUserContext(db, owner, (tx) => createOrg(tx, { name: 'Org Arsip' }))).id;
+    const as = <T>(fn: Parameters<typeof withUserContext<T>>[2]) => withUserContext(db, owner, fn);
+    const [starter] = await db.select().from(plans).where(eq(plans.code, 'starter'));
+    await db.update(subscriptions).set({ planId: starter!.id }).where(eq(subscriptions.orgId, org));
+    const make = (name: string) =>
+      as((tx) =>
+        createBoothFromTemplate(tx, { orgId: org, name, timezone: 'Asia/Jakarta', userId: owner }),
+      );
+
+    const a = (await make('A')).id;
+    await expect(make('B')).rejects.toBeInstanceOf(PlanLimitError);
+    await db.insert(devices).values({
+      orgId: org,
+      boothId: a,
+      name: 'Laptop A',
+      tokenHash: sha256Hex(`archive-${a}`),
+    });
+
+    expect(await as((tx) => archiveBooth(tx, { boothId: a, userId: owner }))).toEqual({
+      revokedDevices: 1,
+    });
+    const [dev] = await db.select().from(devices).where(eq(devices.boothId, a));
+    expect(dev!.revokedAt).not.toBeNull();
+    const b = (await make('B')).id; // archived A no longer counts
+    await expect(
+      as((tx) => restoreBooth(tx, { boothId: a, userId: owner })),
+    ).rejects.toBeInstanceOf(PlanLimitError);
+
+    await as((tx) => deleteUnusedBooth(tx, { boothId: b, userId: owner }));
+    expect(await db.select().from(booths).where(eq(booths.id, b))).toHaveLength(0);
+    await as((tx) => restoreBooth(tx, { boothId: a, userId: owner }));
+    const [restored] = await db.select().from(booths).where(eq(booths.id, a));
+    expect(restored!.status).toBe('active');
+
+    await db.insert(sessions).values({
+      orgId: org,
+      boothId: a,
+      code: 'ARSPA234',
+      startedAt: new Date(),
+      status: 'completed',
+    });
+    await expect(
+      as((tx) => deleteUnusedBooth(tx, { boothId: a, userId: owner })),
+    ).rejects.toMatchObject({ code: 'has_sessions' } satisfies Partial<BoothRemovalError>);
   });
 });

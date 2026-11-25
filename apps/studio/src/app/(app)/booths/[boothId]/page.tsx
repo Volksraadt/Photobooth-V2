@@ -1,4 +1,4 @@
-import { getBooth, getOrgPlan, listConfigVersions, listDevices } from '@pb/db';
+import { boothSessionCount, getBooth, getOrgPlan, listConfigVersions, listDevices } from '@pb/db';
 import { validateBoothConfig } from '@pb/schema';
 import { Alert, Button, Card, CardContent, CardDescription, CardHeader, CardTitle } from '@pb/ui';
 import Link from 'next/link';
@@ -8,7 +8,7 @@ import { idr, METHOD_LABEL } from '@/lib/format';
 import { asUser, requireOrg } from '@/lib/org';
 import { timezoneLabel } from '@/lib/timezones';
 import { revokeDeviceAction } from './actions';
-import { PairDeviceForm, PaymentForm, RollbackButton } from './booth-forms';
+import { BoothLifecycle, PairDeviceForm, PaymentForm, RollbackButton } from './booth-forms';
 import { PagePreviews } from './page-previews';
 
 const ONLINE_MS = 2 * 60 * 1000;
@@ -30,15 +30,17 @@ export default async function BoothPage({ params }: { params: Promise<{ boothId:
   const data = await asUser(user, async (tx) => {
     const row = await getBooth(tx, boothId);
     if (!row) return null;
-    const [versions, devices, plan] = await Promise.all([
+    const [versions, devices, plan, sessionCount] = await Promise.all([
       listConfigVersions(tx, boothId),
       listDevices(tx, boothId),
       getOrgPlan(tx, row.booth.orgId),
+      boothSessionCount(tx, boothId),
     ]);
-    return { row, versions, devices, plan, now: nowMs() };
+    return { row, versions, devices, plan, sessionCount, now: nowMs() };
   });
   if (!data) notFound();
-  const { row, versions, devices, plan, now } = data;
+  const { row, versions, devices, plan, sessionCount, now } = data;
+  const archived = row.booth.status !== 'active';
   const canEdit = org.role !== 'operator';
   const tz = row.booth.timezone;
 
@@ -50,6 +52,12 @@ export default async function BoothPage({ params }: { params: Promise<{ boothId:
 
   return (
     <div className="space-y-6">
+      {archived && (
+        <Alert data-testid="booth-archived">
+          Booth ini <b>diarsipkan</b>: tidak berjalan dan tidak bisa dipasangi perangkat. Pulihkan
+          di bagian bawah halaman bila ingin memakainya lagi.
+        </Alert>
+      )}
       <div className="flex flex-wrap items-end justify-between gap-4">
         <div>
           <Link href="/booths" className="text-sm text-muted-foreground hover:underline">
@@ -199,7 +207,8 @@ export default async function BoothPage({ params }: { params: Promise<{ boothId:
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
-          {canEdit && (maxDevices === null || activeDevices.length < maxDevices) ? (
+          {archived ? null : canEdit &&
+            (maxDevices === null || activeDevices.length < maxDevices) ? (
             <PairDeviceForm boothId={boothId} />
           ) : (
             canEdit && (
@@ -296,6 +305,22 @@ export default async function BoothPage({ params }: { params: Promise<{ boothId:
           )}
         </CardContent>
       </Card>
+
+      {canEdit && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base">Arsip dan hapus</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <BoothLifecycle
+              boothId={boothId}
+              boothName={row.booth.name}
+              archived={archived}
+              sessionCount={sessionCount}
+            />
+          </CardContent>
+        </Card>
+      )}
     </div>
   );
 }

@@ -2,9 +2,17 @@
 
 import { Button, Input } from '@pb/ui';
 import { startTransition, useActionState, useState } from 'react';
+import { ConfirmSubmit } from '@/components/confirm-submit';
 import { FormMessage } from '@/components/form-message';
 import { IDLE } from '@/lib/form';
-import { pairDeviceAction, rollbackAction, savePaymentAction } from './actions';
+import {
+  archiveBoothAction,
+  deleteBoothAction,
+  pairDeviceAction,
+  restoreBoothAction,
+  rollbackAction,
+  savePaymentAction,
+} from './actions';
 
 export function PairDeviceForm({ boothId }: { boothId: string }) {
   const [state, action, pending] = useActionState(pairDeviceAction, IDLE);
@@ -158,5 +166,82 @@ function PaymentFields({
         {pending ? 'Menyimpan…' : 'Simpan & terapkan ke booth'}
       </Button>
     </form>
+  );
+}
+
+/**
+ * Archive / restore / delete at the bottom of the booth page. Delete is offered only when the
+ * booth never had a session (sales records are never erased); otherwise archive.
+ */
+export function BoothLifecycle({
+  boothId,
+  boothName,
+  archived,
+  sessionCount,
+}: {
+  boothId: string;
+  boothName: string;
+  archived: boolean;
+  sessionCount: number;
+}) {
+  const [archiveState, archive, archiving] = useActionState(archiveBoothAction, IDLE);
+  const [restoreState, restore, restoring] = useActionState(restoreBoothAction, IDLE);
+  const [deleteState, remove, deleting] = useActionState(deleteBoothAction, IDLE);
+  return (
+    <div className="space-y-4 text-sm" data-testid="booth-lifecycle">
+      {archived ? (
+        <form action={restore} className="space-y-2">
+          <input type="hidden" name="boothId" value={boothId} />
+          <p className="text-muted-foreground">
+            Booth ini diarsipkan: tidak berjalan dan tidak dihitung dalam batas paket. Data
+            penjualan, voucher, dan desain tetap tersimpan.
+          </p>
+          <Button type="submit" disabled={restoring} data-testid="booth-restore">
+            {restoring ? 'Memulihkan…' : 'Pulihkan booth'}
+          </Button>
+          <FormMessage state={restoreState} />
+        </form>
+      ) : (
+        <form action={archive} className="space-y-2">
+          <input type="hidden" name="boothId" value={boothId} />
+          <p className="text-muted-foreground">
+            Arsipkan booth yang tidak dipakai lagi: perangkatnya dicabut dan booth tidak dihitung
+            dalam batas paket. Data penjualan tetap ada dan booth bisa dipulihkan kapan saja.
+          </p>
+          <ConfirmSubmit
+            label="Arsipkan booth"
+            confirmLabel="Ya, arsipkan"
+            message={`Arsipkan "${boothName}"? Kiosk yang terpasang langsung berhenti dan harus dipasang ulang bila booth dipulihkan.`}
+            testId="booth-archive"
+            pending={archiving}
+          />
+          <FormMessage state={archiveState} />
+        </form>
+      )}
+      <form action={remove} className="space-y-2 border-t pt-4">
+        <input type="hidden" name="boothId" value={boothId} />
+        {sessionCount > 0 ? (
+          <p className="text-muted-foreground">
+            Hapus permanen tidak tersedia: booth ini punya {sessionCount} transaksi yang harus tetap
+            tercatat. Gunakan arsip.
+          </p>
+        ) : (
+          <>
+            <p className="text-muted-foreground">
+              Booth ini belum pernah dipakai, jadi bisa dihapus permanen beserta desain dan
+              vouchernya.
+            </p>
+            <ConfirmSubmit
+              label="Hapus permanen"
+              confirmLabel="Ya, hapus permanen"
+              message={`Hapus "${boothName}" beserta desain, riwayat versi, dan vouchernya? Tindakan ini tidak bisa dibatalkan.`}
+              testId="booth-delete"
+              pending={deleting}
+            />
+          </>
+        )}
+        <FormMessage state={deleteState} />
+      </form>
+    </div>
   );
 }

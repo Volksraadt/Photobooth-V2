@@ -23,6 +23,11 @@ const ENTITY_LABEL: Record<string, string> = {
 const ACTION_LABEL: Record<string, string> = {
   'booth.publish': 'Publish desain booth',
   'booth.rollback': 'Rollback desain booth',
+  'booth.archive': 'Mengarsipkan booth',
+  'booth.restore': 'Memulihkan booth',
+  'booth.delete': 'Menghapus booth',
+  'booth.voucher_offline': 'Mengubah voucher offline',
+  'voucher.reveal': 'Melihat kode voucher',
   'device.pair': 'Memasangkan perangkat',
   'device.revoke': 'Mencabut perangkat',
   'device.paper_new_roll': 'Roll kertas baru',

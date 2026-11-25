@@ -1,16 +1,20 @@
 'use server';
 
 import {
+  archiveBooth,
+  deleteUnusedBooth,
   getBooth,
   getConfigVersion,
   listConfigVersions,
   PlanLimitError,
   publishConfig,
+  restoreBooth,
   revokeDevice,
   saveDraft,
 } from '@pb/db';
 import { validateBoothConfig, type BoothConfig } from '@pb/schema';
 import { revalidatePath } from 'next/cache';
+import { redirect } from 'next/navigation';
 import { apiFetch } from '@/lib/api';
 import { field, type FormState } from '@/lib/form';
 import { asUser, requireOrg } from '@/lib/org';
@@ -174,4 +178,55 @@ function issueText(issues: { message: string }[]): string {
     .slice(0, 3)
     .map((i) => i.message)
     .join(' ')} Tambahkan elemen yang dibutuhkan di editor (halaman Pembayaran).`;
+}
+
+/** Archive: stops the booth (devices revoked) and frees a plan slot; data stays. */
+export async function archiveBoothAction(_prev: FormState, form: FormData): Promise<FormState> {
+  const { user } = await editor();
+  const boothId = field(form, 'boothId');
+  try {
+    const r = await asUser(user, (tx) => archiveBooth(tx, { boothId, userId: user.id }));
+    revalidatePath(`/booths/${boothId}`);
+    revalidatePath('/booths');
+    return {
+      status: 'info',
+      message: `Booth diarsipkan${r.revokedDevices ? ` dan ${r.revokedDevices} perangkat dicabut` : ''}.`,
+    };
+  } catch (err) {
+    return { status: 'error', message: err instanceof Error ? err.message : 'Gagal mengarsipkan.' };
+  }
+}
+
+export async function restoreBoothAction(_prev: FormState, form: FormData): Promise<FormState> {
+  const { user } = await editor();
+  const boothId = field(form, 'boothId');
+  try {
+    await asUser(user, (tx) => restoreBooth(tx, { boothId, userId: user.id }));
+    revalidatePath(`/booths/${boothId}`);
+    revalidatePath('/booths');
+    return {
+      status: 'info',
+      message: 'Booth dipulihkan. Pasang ulang perangkatnya dengan kode baru.',
+    };
+  } catch (err) {
+    if (err instanceof PlanLimitError)
+      return {
+        status: 'error',
+        message: `Paket ${err.planName} dibatasi ${err.max} booth aktif. Arsipkan booth lain atau upgrade paket.`,
+      };
+    return { status: 'error', message: err instanceof Error ? err.message : 'Gagal memulihkan.' };
+  }
+}
+
+/** Permanent delete (only a booth without any session); goes back to the booth list. */
+export async function deleteBoothAction(_prev: FormState, form: FormData): Promise<FormState> {
+  const { user } = await editor();
+  const boothId = field(form, 'boothId');
+  try {
+    await asUser(user, (tx) => deleteUnusedBooth(tx, { boothId, userId: user.id }));
+  } catch (err) {
+    return { status: 'error', message: err instanceof Error ? err.message : 'Gagal menghapus.' };
+  }
+  revalidatePath('/booths');
+  redirect('/booths?deleted=1');
 }

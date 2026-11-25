@@ -9,7 +9,7 @@ import {
   listUploadQueue,
 } from '@pb/db';
 import type { BoothConfig } from '@pb/schema';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@pb/ui';
+import { Alert, Card, CardContent, CardDescription, CardHeader, CardTitle } from '@pb/ui';
 import Link from 'next/link';
 import { OrgOverview, type OverviewData } from '@/components/org-overview';
 import { idr, nowMs } from '@/lib/format';
@@ -18,7 +18,12 @@ import { addDays, todayIn } from '@/lib/range';
 import { timezoneLabel } from '@/lib/timezones';
 import { CreateBoothForm } from './create-booth-form';
 
-export default async function BoothsPage() {
+export default async function BoothsPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ deleted?: string }>;
+}) {
+  const { deleted } = await searchParams;
   const { user, org } = await requireOrg();
   const now = nowMs();
   const today = todayIn(org.timezone, new Date(now));
@@ -76,7 +81,10 @@ export default async function BoothsPage() {
     return { booths, templates, plan, overview, perBooth };
   });
   const maxBooths = plan?.limits.maxBooths ?? null;
-  const atLimit = maxBooths !== null && booths.length >= maxBooths;
+  const activeBooths = booths.filter((b) => b.status === 'active');
+  const archivedBooths = booths.filter((b) => b.status !== 'active');
+  // Archived booths do not count toward the plan limit.
+  const atLimit = maxBooths !== null && activeBooths.length >= maxBooths;
   const canEdit = org.role !== 'operator';
 
   return (
@@ -88,15 +96,21 @@ export default async function BoothsPage() {
         </p>
       </div>
 
+      {deleted && (
+        <Alert variant="success" data-testid="booth-deleted">
+          Booth dihapus.
+        </Alert>
+      )}
+
       <OrgOverview data={overview} />
 
-      {booths.length === 0 ? (
+      {activeBooths.length === 0 ? (
         <p className="rounded-lg border border-dashed bg-background p-8 text-center text-sm text-muted-foreground">
-          Belum ada booth.
+          {archivedBooths.length ? 'Tidak ada booth aktif.' : 'Belum ada booth.'}
         </p>
       ) : (
         <ul className="divide-y rounded-lg border bg-background" data-testid="booth-list">
-          {booths.map((b) => {
+          {activeBooths.map((b) => {
             const p = perBooth.get(b.id);
             return (
               <li key={b.id}>
@@ -128,6 +142,27 @@ export default async function BoothsPage() {
             );
           })}
         </ul>
+      )}
+
+      {archivedBooths.length > 0 && (
+        <details className="rounded-lg border bg-background" data-testid="archived-booths">
+          <summary className="cursor-pointer p-4 text-sm text-muted-foreground">
+            Booth diarsipkan ({archivedBooths.length})
+          </summary>
+          <ul className="divide-y border-t">
+            {archivedBooths.map((b) => (
+              <li key={b.id}>
+                <Link
+                  href={`/booths/${b.id}`}
+                  className="flex items-center justify-between p-4 text-sm hover:bg-muted/50"
+                >
+                  <span>{b.name}</span>
+                  <span className="text-xs text-muted-foreground">Diarsipkan ›</span>
+                </Link>
+              </li>
+            ))}
+          </ul>
+        </details>
       )}
 
       {canEdit && (

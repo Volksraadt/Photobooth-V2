@@ -14,6 +14,7 @@ import {
   boothDrafts,
   booths,
   devices,
+  sessions,
   templates,
   type PlanLimits,
 } from './schema';
@@ -76,8 +77,8 @@ export async function createBoothFromTemplate(
   const plan = await getOrgPlan(tx, input.orgId);
   const maxBooths = plan?.limits.maxBooths ?? null;
   if (plan && maxBooths !== null) {
-    const [row] = await tx.select({ n: count() }).from(booths).where(eq(booths.orgId, input.orgId));
-    if ((row?.n ?? 0) >= maxBooths) throw new PlanLimitError('maxBooths', maxBooths, plan.name);
+    if ((await activeBoothCount(tx, input.orgId)) >= maxBooths)
+      throw new PlanLimitError('maxBooths', maxBooths, plan.name);
   }
   const id = createId();
   let config: BoothConfig | null = null;
@@ -251,4 +252,116 @@ export async function revokeDevice(tx: Tx, deviceId: string, userId: string) {
     });
   }
   return !!row;
+}
+
+/** Booths that count toward the plan's maxBooths (archived booths do not). */
+async function activeBoothCount(tx: Tx, orgId: string): Promise<number> {
+  const [row] = await tx
+    .select({ n: count() })
+    .from(booths)
+    .where(and(eq(booths.orgId, orgId), eq(booths.status, 'active')));
+  return row?.n ?? 0;
+}
+
+export class BoothRemovalError extends Error {
+  constructor(
+    readonly code: 'not_found' | 'has_sessions',
+    message: string,
+  ) {
+    super(message);
+    this.name = 'BoothRemovalError';
+  }
+}
+
+/**
+ * Archive: the booth stops (its devices are revoked, the kiosk has to be paired again after a
+ * restore), it no longer counts toward maxBooths, and sales, sessions, vouchers and designs stay.
+ */
+export async function archiveBooth(tx: Tx, input: { boothId: string; userId: string }) {
+  const [row] = await tx
+    .update(booths)
+    .set({ status: 'inactive', updatedAt: new Date() })
+    .where(eq(booths.id, input.boothId))
+    .returning({ orgId: booths.orgId });
+  if (!row) throw new BoothRemovalError('not_found', 'Booth tidak ditemukan.');
+  const live = await tx
+    .select({ id: devices.id })
+    .from(devices)
+    .where(and(eq(devices.boothId, input.boothId), isNull(devices.revokedAt)));
+  for (const d of live) await revokeDevice(tx, d.id, input.userId);
+  await tx.insert(auditLogs).values({
+    orgId: row.orgId,
+    actorId: input.userId,
+    action: 'booth.archive',
+    entity: 'booth',
+    entityId: input.boothId,
+    after: { revokedDevices: live.length },
+  });
+  return { revokedDevices: live.length };
+}
+
+/** Restore an archived booth (counts toward maxBooths again). */
+export async function restoreBooth(tx: Tx, input: { boothId: string; userId: string }) {
+  const [b] = await tx
+    .select({ orgId: booths.orgId, status: booths.status })
+    .from(booths)
+    .where(eq(booths.id, input.boothId));
+  if (!b) throw new BoothRemovalError('not_found', 'Booth tidak ditemukan.');
+  if (b.status === 'active') return;
+  const plan = await getOrgPlan(tx, b.orgId);
+  const maxBooths = plan?.limits.maxBooths ?? null;
+  if (plan && maxBooths !== null && (await activeBoothCount(tx, b.orgId)) >= maxBooths)
+    throw new PlanLimitError('maxBooths', maxBooths, plan.name);
+  await tx
+    .update(booths)
+    .set({ status: 'active', updatedAt: new Date() })
+    .where(eq(booths.id, input.boothId));
+  await tx.insert(auditLogs).values({
+    orgId: b.orgId,
+    actorId: input.userId,
+    action: 'booth.restore',
+    entity: 'booth',
+    entityId: input.boothId,
+  });
+}
+
+/**
+ * Permanent delete, only for a booth that never had a session: sessions cascade with the booth,
+ * so deleting one with sales would erase financial records (archive it instead).
+ */
+export async function deleteUnusedBooth(tx: Tx, input: { boothId: string; userId: string }) {
+  const [b] = await tx
+    .select({ orgId: booths.orgId, name: booths.name })
+    .from(booths)
+    .where(eq(booths.id, input.boothId));
+  if (!b) throw new BoothRemovalError('not_found', 'Booth tidak ditemukan.');
+  const [used] = await tx
+    .select({ n: count() })
+    .from(sessions)
+    .where(eq(sessions.boothId, input.boothId));
+  if ((used?.n ?? 0) > 0)
+    throw new BoothRemovalError(
+      'has_sessions',
+      'Booth ini sudah punya transaksi, jadi tidak bisa dihapus permanen. Arsipkan saja.',
+    );
+  const live = await tx
+    .select({ id: devices.id })
+    .from(devices)
+    .where(and(eq(devices.boothId, input.boothId), isNull(devices.revokedAt)));
+  for (const d of live) await revokeDevice(tx, d.id, input.userId);
+  await tx.delete(booths).where(eq(booths.id, input.boothId));
+  await tx.insert(auditLogs).values({
+    orgId: b.orgId,
+    actorId: input.userId,
+    action: 'booth.delete',
+    entity: 'booth',
+    entityId: input.boothId,
+    before: { name: b.name },
+  });
+}
+
+/** Sessions recorded for a booth (decides between delete and archive in Studio). */
+export async function boothSessionCount(tx: Tx, boothId: string): Promise<number> {
+  const [row] = await tx.select({ n: count() }).from(sessions).where(eq(sessions.boothId, boothId));
+  return row?.n ?? 0;
 }

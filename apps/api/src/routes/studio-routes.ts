@@ -54,7 +54,7 @@ export function studioRoutes() {
     // RLS decides visibility; the role check decides who may add devices.
     const access = await withUserContext(db, userId, async (tx) => {
       const [booth] = await tx
-        .select({ id: booths.id, orgId: booths.orgId })
+        .select({ id: booths.id, orgId: booths.orgId, status: booths.status })
         .from(booths)
         .where(eq(booths.id, body.data.boothId));
       if (!booth) return null;
@@ -62,6 +62,15 @@ export function studioRoutes() {
       return org ? { booth, role: org.role } : null;
     });
     if (!access) return c.json({ error: 'not_found', message: 'Booth tidak ditemukan.' }, 404);
+    if (access.booth.status !== 'active') {
+      return c.json(
+        {
+          error: 'booth_archived',
+          message: 'Booth diarsipkan. Pulihkan dulu sebelum memasang perangkat.',
+        },
+        409,
+      );
+    }
     if (access.role === 'operator') {
       return c.json(
         { error: 'forbidden', message: 'Operator tidak dapat memasang perangkat.' },
