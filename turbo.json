@@ -5,6 +5,7 @@
   "globalPassThroughEnv": [
     "DATABASE_URL",
     "PB_LOCAL_DB",
+    "PB_DB_POOL_MAX",
     "PB_AUTH_MODE",
     "DEV_AUTH_SECRET",
     "SECRET_MASTER_KEY",

@@ -8,7 +8,9 @@ export function createDb(
   opts: { max?: number } = {},
 ): { db: Db; close: () => Promise<void> } {
   const client = postgres(url, {
-    max: opts.max ?? 10,
+    // Supabase poolers cap clients per project (Free session pooler: 15), shared by Studio, API
+    // and worker: lower it with PB_DB_POOL_MAX.
+    max: opts.max ?? (Number(process.env.PB_DB_POOL_MAX) || 10),
     // Supabase transaction pooler does not support prepared statements.
     prepare: !url.includes('pooler.supabase.com'),
     onnotice: () => {},
