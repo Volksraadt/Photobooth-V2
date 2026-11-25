@@ -5,7 +5,7 @@ Status: **ter-deploy 2026-11-25** (Hobby). Domain bawaan Vercel:
 - API: https://photobooth-api-one.vercel.app (proyek `photobooth-api`, Root `apps/api`, preset Other)
 - Studio: https://photobooth-studio-coral.vercel.app (proyek `photobooth-studio`, Root `apps/studio`)
 
-Sudah diatur: env kedua proyek (Secret; `NEXT_PUBLIC_*` harus tipe Config), Supabase Site URL + redirect `/auth/callback` Vercel (localhost tetap diizinkan), redirect URI Google OAuth ke API Vercel, Notification URL Midtrans sandbox ke `/webhooks/midtrans/br4gkl87qobjwo2bag043wxn` (org Volksraadt Studio) dan `/webhooks/billing`. Belum: laptop booth (agent/kiosk/worker) masih memakai API lokal.
+Sudah diatur: env kedua proyek (Secret; `NEXT_PUBLIC_*` harus tipe Config), Supabase Site URL + redirect `/auth/callback` Vercel (localhost tetap diizinkan), redirect URI Google OAuth ke API Vercel, Notification URL Midtrans sandbox ke `/webhooks/midtrans/br4gkl87qobjwo2bag043wxn` (org Volksraadt Studio) dan `/webhooks/billing`. Laptop booth: `pnpm booth` (agent + Kiosk + worker ke API Vercel, tanpa API/Studio lokal; Kiosk di http://localhost:5173). Diuji 2026-11-26: voucher online lewat Vercel, sesi C6223PLM diproses worker laptop, short link Vercel → Drive dalam ±1 menit.
 
 ## Bagian dan tempatnya
 
@@ -43,6 +43,7 @@ Paket **Hobby hanya untuk pemakaian non-komersial**. Uji coba sendiri boleh; beg
    - agent: `PB_API_URL=https://<api>.vercel.app`, `PB_SHORT_LINK_BASE=https://<api>.vercel.app`
    - kiosk: `VITE_SHORT_LINK_BASE=https://<api>.vercel.app`
    - worker: `PB_PUBLIC_API_URL=https://<api>.vercel.app` lalu `pnpm --filter @pb/worker start` (memakai `DATABASE_URL` session pooler seperti dev).
+   - Atau cukup `pnpm booth` (scripts/booth.mjs): menyetel semua variabel di atas ke `PB_BOOTH_API_URL` (default API Vercel) dan menjalankan agent + Kiosk + worker saja.
 
 ## Cek setelah deploy
 - `https://<api>.vercel.app/s/XXXXXXXX` → 404 (halaman "tidak ditemukan"), `…/studio/me` → 401.

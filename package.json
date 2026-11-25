@@ -18,7 +18,8 @@
     "db:generate": "pnpm --filter @pb/db db:generate",
     "db:migrate": "pnpm --filter @pb/db db:migrate",
     "db:seed": "pnpm --filter @pb/db db:seed",
-    "dev:camera": "pnpm --filter @pb/camera dev"
+    "dev:camera": "pnpm --filter @pb/camera dev",
+    "booth": "node scripts/booth.mjs"
   },
   "devDependencies": {
     "@eslint/js": "^9.39.0",
