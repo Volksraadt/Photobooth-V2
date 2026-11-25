@@ -18,6 +18,8 @@ export type InvoiceView = {
   paidAt: string | null;
   qrString: string | null;
   qrExpiresAt: string | null;
+  /** True when a QR was issued and expired; false when none was issued yet. */
+  qrExpired?: boolean;
 };
 
 export type CheckoutResult = { ok: true; invoice: InvoiceView } | { ok: false; message: string };

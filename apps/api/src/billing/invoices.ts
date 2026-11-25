@@ -112,5 +112,7 @@ export function invoiceView(
     createdAt: inv.createdAt.toISOString(),
     qrString: qrLive ? inv.qrString : null,
     qrExpiresAt: qrLive ? inv.qrExpiresAt!.toISOString() : null,
+    /** A QR was issued but is no longer payable (vs. never issued, e.g. a worker-made renewal). */
+    qrExpired: inv.status === 'pending' && !!inv.qrString && !qrLive,
   };
 }

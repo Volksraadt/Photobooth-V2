@@ -89,7 +89,7 @@ Siapkan data: jalankan beberapa sesi di booth (QRIS sandbox, voucher, tunai, dan
 | 4.1 | Org baru: **Langganan** | Paket Pro, "Masa percobaan", berakhir 14 hari lagi | |
 | 4.2 | Admin → ubah paket org ke **Starter** (aktif) | Org tidak bisa membuat booth kedua (form diganti pesan batas paket) | |
 | 4.3 | Org Starter: **Pilih Pro** | Muncul QR QRIS + nominal; "Menunggu pembayaran…" | |
-| 4.4 | Bayar QR dengan simulator QRIS Midtrans sandbox (<https://simulator.sandbox.midtrans.com/qris/index>) | Dalam beberapa detik halaman menampilkan "Pembayaran diterima. Paket Pro aktif"; nama paket berubah; riwayat tagihan "lunas" | |
+| 4.4 | Bayar QR dengan simulator QRIS Midtrans sandbox (<https://simulator.sandbox.midtrans.com/v2/qris/index>; tempel `https://api.sandbox.midtrans.com/v2/qris/<provider_ref>/qr-code` dari `billing_invoices`) | Dalam beberapa detik halaman menampilkan "Pembayaran diterima. Paket Pro aktif"; nama paket berubah; riwayat tagihan "lunas" | |
 | 4.5 | Buat booth kedua | Berhasil (Pro: 3 booth) | |
 | 4.6 | Kartu tagihan di akun Midtrans **platform** | Transaksi QRIS masuk di akun **platform**, bukan akun Midtrans owner | |
 | 4.7 | Studio → Integrasi (kredensial Midtrans owner) tetap tidak berubah | Pembayaran pembeli di booth tetap ke akun owner | |

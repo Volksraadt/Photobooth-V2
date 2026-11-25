@@ -89,9 +89,15 @@ export function PlanCheckout({
             <Qr value={invoice.qrString} />
           ) : (
             <div className="space-y-2">
-              <p className="text-sm text-amber-700">Kode QR sudah kedaluwarsa.</p>
+              {invoice.qrExpired ? (
+                <p className="text-sm text-amber-700">Kode QR sudah kedaluwarsa.</p>
+              ) : (
+                <p className="text-sm text-muted-foreground">
+                  Buat kode QR untuk membayar tagihan ini.
+                </p>
+              )}
               <Button onClick={renew} disabled={pending} variant="outline" data-testid="renew-qr">
-                Buat kode QR baru
+                {invoice.qrExpired ? 'Buat kode QR baru' : 'Buat kode QR'}
               </Button>
             </div>
           )}
