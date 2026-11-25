@@ -1,4 +1,5 @@
 import { Alert, Button, Card, CardContent, CardDescription, CardHeader, CardTitle } from '@pb/ui';
+import Link from 'next/link';
 import { redirect } from 'next/navigation';
 import { getCurrentUser } from '@/lib/auth';
 import { authMode } from '@/lib/env';
@@ -35,6 +36,15 @@ export default async function LoginPage({
               Mode dev: login Google aktif saat <code>PB_AUTH_MODE=supabase</code>.
             </p>
           )}
+          <p className="text-center text-xs text-muted-foreground">
+            <Link href="/tentang" className="underline">
+              Tentang
+            </Link>{' '}
+            ·{' '}
+            <Link href="/privasi" className="underline">
+              Kebijakan Privasi
+            </Link>
+          </p>
         </CardContent>
       </Card>
     </main>
