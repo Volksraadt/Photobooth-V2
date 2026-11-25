@@ -16,6 +16,7 @@ import {
   resolveEntitlements,
   setPlanPrice,
   withUserContext,
+  listLibraryFrames,
   type Db,
 } from '@pb/db';
 import { createTestDb, createTestUser, seedPlans } from '@pb/db/testing';
@@ -454,5 +455,85 @@ describe('platform admin', () => {
       await call('/admin/billing/run-lifecycle', { method: 'POST', token: adminToken }),
     );
     expect(run).toHaveProperty('pastDue');
+  });
+});
+
+describe('platform frame library', () => {
+  const slot = (index: number, y: number) => ({
+    index,
+    x: 30,
+    y,
+    width: 540,
+    height: 360,
+    rotation: 0,
+    borderRadius: 0,
+  });
+  const body = (over: Record<string, unknown> = {}) =>
+    JSON.stringify({
+      name: 'Bunga Pastel',
+      url: 'http://localhost:3000/media/org/library/abc.png',
+      sha256: 'a'.repeat(64),
+      bytes: 1234,
+      mimeType: 'image/png',
+      width: 600,
+      height: 1800,
+      slots: [slot(1, 40), slot(2, 420)],
+      ...over,
+    });
+
+  it('admins manage it; owners read only published frames; foreign URLs are refused', async () => {
+    expect(
+      (await call('/admin/library-frames', { method: 'POST', token: userToken, body: body() }))
+        .status,
+    ).toBe(403);
+    const bad = await call('/admin/library-frames', {
+      method: 'POST',
+      token: adminToken,
+      body: body({ url: 'http://169.254.169.254/x.png' }),
+    });
+    expect(bad.status).toBe(400);
+    const badSlots = await call('/admin/library-frames', {
+      method: 'POST',
+      token: adminToken,
+      body: body({ slots: [slot(2, 40)] }),
+    });
+    expect(badSlots.status).toBe(400);
+
+    const created = await call('/admin/library-frames', {
+      method: 'POST',
+      token: adminToken,
+      body: body(),
+    });
+    expect(created.status).toBe(201);
+    const { frame } = await json(created);
+    const hidden = await json(
+      await call('/admin/library-frames', {
+        method: 'POST',
+        token: adminToken,
+        body: body({ name: 'Draft', isPublished: false }),
+      }),
+    );
+
+    const ownerView = await withUserContext(db, userId, (tx) => listLibraryFrames(tx));
+    expect(ownerView.map((f) => f.name)).toContain('Bunga Pastel');
+    expect(ownerView.map((f) => f.id)).not.toContain(hidden.frame.id);
+
+    const patched = await call(`/admin/library-frames/${frame.id}`, {
+      method: 'PATCH',
+      token: adminToken,
+      body: JSON.stringify({ isPublished: false, name: 'Bunga' }),
+    });
+    expect((await json(patched)).frame).toMatchObject({ name: 'Bunga', isPublished: false });
+    expect(
+      (await withUserContext(db, userId, (tx) => listLibraryFrames(tx))).map((f) => f.id),
+    ).not.toContain(frame.id);
+
+    const del = await call(`/admin/library-frames/${frame.id}`, {
+      method: 'DELETE',
+      token: adminToken,
+    });
+    expect(del.status).toBe(200);
+    const list = await json(await call('/admin/library-frames', { token: adminToken }));
+    expect(list.frames.map((f: { id: string }) => f.id)).not.toContain(frame.id);
   });
 });

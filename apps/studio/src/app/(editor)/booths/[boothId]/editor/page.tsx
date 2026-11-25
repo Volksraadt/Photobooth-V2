@@ -1,4 +1,4 @@
-import { getBooth, getOrgPlan, listAssets } from '@pb/db';
+import { getBooth, getOrgPlan, listAssets, listLibraryFrames } from '@pb/db';
 import { PAGE_TYPES, upgradeBoothConfig, type BoothConfig, type PageType } from '@pb/schema';
 import { notFound } from 'next/navigation';
 import { EditorShell } from '@/editor/editor-shell';
@@ -25,11 +25,12 @@ export default async function EditorPage({
   const data = await asUser(user, async (tx) => {
     const row = await getBooth(tx, boothId);
     if (!row?.draft) return null;
-    const [assets, plan] = await Promise.all([
+    const [assets, plan, library] = await Promise.all([
       listAssets(tx, row.booth.orgId),
       getOrgPlan(tx, row.booth.orgId),
+      listLibraryFrames(tx),
     ]);
-    return { row, assets, plan };
+    return { row, assets, plan, library };
   });
   if (!data) notFound();
   // Upgrade old shapes WITHOUT validating: a draft may be semantically invalid while editing, and
@@ -45,6 +46,14 @@ export default async function EditorPage({
       canEdit={org.role !== 'operator'}
       assets={data.assets.map(toAssetItem)}
       maxFrames={data.plan?.limits.maxFrames ?? null}
+      libraryFrames={data.library.map((f) => ({
+        id: f.id,
+        name: f.name,
+        url: f.url,
+        sha256: f.sha256,
+        bytes: f.bytes,
+        slots: f.slots,
+      }))}
       saveDraft={saveDraftAction}
       publish={publishAction}
       preflight={publishPreflightAction}

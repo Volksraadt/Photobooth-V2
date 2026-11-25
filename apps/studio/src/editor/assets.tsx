@@ -4,7 +4,7 @@ import type { AssetRef, BoothConfig } from '@pb/schema';
 import { cn } from '@pb/ui';
 import type { Draft } from 'immer';
 import { useRef, useState } from 'react';
-import { useEditor, useEnv, type AssetItem } from './editor-context';
+import { libraryAssetId, useEditor, useEnv, type AssetItem } from './editor-context';
 import { Row } from './fields';
 
 export { FONT_FAMILY_PREFIX } from '@pb/schema';
@@ -61,7 +61,10 @@ export function useAssetsOfKind(kind: AssetItem['kind']): AssetItem[] {
   const docAssets = useEditor((s) => s.doc.assets);
   const byId = new Map<string, AssetItem>();
   for (const a of docAssets) {
-    if (a.kind === kind) byId.set(a.id, { ...a, width: null, height: null, name: a.id });
+    if (a.kind !== kind) continue;
+    const lib = env.libraryFrames.find((f) => libraryAssetId(f.id) === a.id);
+    const name = lib ? `Pustaka: ${lib.name}` : a.id.startsWith('builtin-') ? 'Bawaan' : a.id;
+    byId.set(a.id, { ...a, width: null, height: null, name });
   }
   for (const a of env.assets) if (a.kind === kind) byId.set(a.id, a);
   return [...byId.values()];

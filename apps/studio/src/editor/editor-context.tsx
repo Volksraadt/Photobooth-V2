@@ -1,6 +1,6 @@
 'use client';
 
-import type { BoothConfig } from '@pb/schema';
+import type { BoothConfig, PhotoSlot } from '@pb/schema';
 import type { Draft } from 'immer';
 import { createContext, useCallback, useContext, useMemo, useSyncExternalStore } from 'react';
 import type { EditCtx } from './operations';
@@ -17,6 +17,19 @@ export type AssetItem = {
   name: string;
 };
 
+/** A frame from the platform frame library (Admin → Pustaka frame). */
+export type LibraryFrameItem = {
+  id: string;
+  name: string;
+  url: string;
+  sha256: string;
+  bytes: number;
+  slots: PhotoSlot[];
+};
+
+/** Asset id a library frame's overlay gets inside a booth config. */
+export const libraryAssetId = (frameId: string) => `lib-${frameId}`;
+
 export type EditorEnv = {
   boothId: string;
   boothName: string;
@@ -26,6 +39,8 @@ export type EditorEnv = {
   addAsset: (asset: AssetItem) => void;
   /** Plan frame limit (null = unlimited). */
   maxFrames: number | null;
+  /** Published platform library frames. */
+  libraryFrames: LibraryFrameItem[];
 };
 
 export const EditorStoreContext = createContext<EditorStore | null>(null);

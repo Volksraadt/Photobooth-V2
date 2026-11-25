@@ -1,4 +1,5 @@
 import { Button, Card, CardContent, CardDescription, CardHeader, CardTitle } from '@pb/ui';
+import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { apiFetch } from '@/lib/api';
 import { requireUser } from '@/lib/auth';
@@ -47,11 +48,18 @@ export default async function AdminPage() {
             organisasi terkait.
           </p>
         </div>
-        <form action={runLifecycleAction}>
-          <Button type="submit" variant="outline" data-testid="run-lifecycle">
-            Jalankan siklus langganan sekarang
+        <div className="flex flex-wrap gap-2">
+          <Button asChild variant="outline">
+            <Link href="/admin/frames" data-testid="admin-frames">
+              Pustaka frame
+            </Link>
           </Button>
-        </form>
+          <form action={runLifecycleAction}>
+            <Button type="submit" variant="outline" data-testid="run-lifecycle">
+              Jalankan siklus langganan sekarang
+            </Button>
+          </form>
+        </div>
       </div>
 
       <Card>

@@ -24,7 +24,7 @@
 | 27 | PIN tunai per staff (`cash_approvals.approved_by_pin_of`) | PIN admin booth; kolom diisi `null` | F7 (peran staff) |
 | 28 | Lebih dari satu instance API: sinyal pembayaran ke device | In-process (`DeviceSignals`); polling 2–3 dtk menutup selisih. Pindah ke `pg_notify` bila diskalakan | Sebelum scale-out API |
 | 17 | Sesi berbayar yang tidak bisa dilanjutkan (mis. kamera rusak permanen): refund/kompensasi | Halaman Error menunggu; keluar dari Error mencoba melanjutkan sesi; operator menangani manual | F3/F4 |
-| 18 | Kebijakan Supabase Storage untuk bucket `assets` (upload oleh anggota org, baca publik) | Kode upload mode supabase siap, belum diuji (lihat #12); dev memakai disk lokal | Sebelum F2 dipakai di Supabase |
+| 18 | Kebijakan Supabase Storage untuk bucket `assets` (upload oleh anggota org, baca publik) | Kode upload mode supabase siap, belum diuji (lihat #12); dev memakai disk lokal **2026-11-26: bucket publik `assets` + policy folder org dibuat lewat migrasi 0009, unggah diuji ke proyek dev hosted.** | Sebelum F2 dipakai di Supabase |
 | 19 | Retensi aset yang tidak lagi dipakai booth mana pun | Tidak dihapus otomatis; pustaka aset menampilkan semua | F6 |
 | 20 | Token device di keychain OS (arsitektur §5) | F3: file `device-token` 0600 di folder data agent | Sebelum launch |
 | 21 | TLS untuk server kamera LAN (foto lewat Wi-Fi booth tanpa enkripsi) | HTTP + token kamera; opsi: sertifikat self-signed + fingerprint di QR pairing | Sebelum launch |

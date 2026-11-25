@@ -1,4 +1,4 @@
-import type { BoothConfig } from '@pb/schema';
+import type { BoothConfig, PhotoSlot } from '@pb/schema';
 import {
   type AnyPgColumn,
   boolean,
@@ -156,5 +156,27 @@ export const templates = pgTable('templates', {
   preview: text('preview'),
   config: jsonb('config').$type<Partial<BoothConfig>>().notNull(),
   isPublic: boolean('is_public').notNull().default(false),
+  ...timestamps,
+});
+
+/**
+ * Platform frame library: overlays uploaded by platform admins that every org can add to a booth.
+ * Global (no org_id); owners only read published rows. Slots are in overlay (strip) px.
+ */
+export const libraryFrames = pgTable('library_frames', {
+  id: id(),
+  name: text('name').notNull(),
+  description: text('description'),
+  /** Public URL in platform storage (must pass isAllowedAssetUrl). */
+  url: text('url').notNull(),
+  sha256: text('sha256').notNull(),
+  bytes: integer('bytes').notNull(),
+  mimeType: text('mime_type').notNull(),
+  width: integer('width'),
+  height: integer('height'),
+  slots: jsonb('slots').$type<PhotoSlot[]>().notNull(),
+  sortOrder: integer('sort_order').notNull().default(0),
+  isPublished: boolean('is_published').notNull().default(true),
+  createdBy: text('created_by'),
   ...timestamps,
 });

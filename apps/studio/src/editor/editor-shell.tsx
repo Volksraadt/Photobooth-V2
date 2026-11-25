@@ -14,6 +14,7 @@ import {
   useStore,
   type AssetItem,
   type EditorEnv,
+  type LibraryFrameItem,
 } from './editor-context';
 import { IconButton } from './fields';
 import { FiltersView } from './filters-view';
@@ -37,6 +38,8 @@ export type PublishFn = (
 /** Non-blocking warnings the owner should see before publishing (e.g. QRIS without Midtrans). */
 export type PublishPreflightFn = (boothId: string, config: BoothConfig) => Promise<string[]>;
 
+const NO_LIBRARY: LibraryFrameItem[] = [];
+
 export function EditorShell(props: {
   initialConfig: BoothConfig;
   boothId: string;
@@ -44,6 +47,7 @@ export function EditorShell(props: {
   canEdit: boolean;
   assets: AssetItem[];
   maxFrames: number | null;
+  libraryFrames?: LibraryFrameItem[];
   saveDraft: SaveDraftFn;
   publish: PublishFn;
   preflight: PublishPreflightFn;
@@ -64,8 +68,17 @@ export function EditorShell(props: {
       assets,
       addAsset,
       maxFrames: props.maxFrames,
+      libraryFrames: props.libraryFrames ?? NO_LIBRARY,
     }),
-    [props.boothId, props.boothName, props.canEdit, assets, addAsset, props.maxFrames],
+    [
+      props.boothId,
+      props.boothName,
+      props.canEdit,
+      assets,
+      addAsset,
+      props.maxFrames,
+      props.libraryFrames,
+    ],
   );
 
   useEffect(() => {

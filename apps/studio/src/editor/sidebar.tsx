@@ -14,7 +14,15 @@ import {
 import { cn } from '@pb/ui';
 import { useState } from 'react';
 import { ensureAssetRef } from './assets';
-import { useApply, useCtx, useEditor, useEnv, useStore } from './editor-context';
+import {
+  libraryAssetId,
+  useApply,
+  useCtx,
+  useEditor,
+  useEnv,
+  useStore,
+  type LibraryFrameItem,
+} from './editor-context';
 import { ELEMENT_LABEL, createElement } from './element-factory';
 import { IconButton, Section } from './fields';
 import { PAGE_LABEL, readableTokens } from './labels';
@@ -508,20 +516,100 @@ export function FramesList({ issues }: { issues: IssueGroups }) {
     open(id);
   };
 
+  const [showLibrary, setShowLibrary] = useState(false);
+  const addFromLibrary = (lib: LibraryFrameItem) => {
+    const id = createId();
+    const assetId = libraryAssetId(lib.id);
+    apply('Frame dari pustaka', (d) => {
+      ensureAssetRef(d, {
+        id: assetId,
+        kind: 'image',
+        url: lib.url,
+        sha256: lib.sha256,
+        bytes: lib.bytes,
+      });
+      d.frames.push({
+        id,
+        name: lib.name.slice(0, 120),
+        thumbnailAssetId: assetId,
+        overlayAssetId: assetId,
+        slots: clone(lib.slots),
+        dynamicElements: [],
+        enabled: true,
+        sortOrder: Math.max(0, ...d.frames.map((f) => f.sortOrder)) + 1,
+      });
+    });
+    setShowLibrary(false);
+    open(id);
+  };
+
   return (
     <Section
       title="Frame"
       actions={
-        <IconButton
-          title={atLimit ? `Batas paket: ${env.maxFrames} frame` : 'Tambah frame'}
-          testId="frame-add"
-          disabled={atLimit}
-          onClick={addFrame}
-        >
-          +
-        </IconButton>
+        <>
+          <IconButton
+            title={
+              atLimit
+                ? `Batas paket: ${env.maxFrames} frame`
+                : env.libraryFrames.length
+                  ? 'Tambah dari pustaka frame'
+                  : 'Pustaka frame masih kosong'
+            }
+            testId="frame-library"
+            disabled={atLimit || env.libraryFrames.length === 0}
+            onClick={() => setShowLibrary((v) => !v)}
+          >
+            ▦
+          </IconButton>
+          <IconButton
+            title={atLimit ? `Batas paket: ${env.maxFrames} frame` : 'Tambah frame kosong'}
+            testId="frame-add"
+            disabled={atLimit}
+            onClick={addFrame}
+          >
+            +
+          </IconButton>
+        </>
       }
     >
+      {showLibrary && !atLimit && (
+        <div
+          className="space-y-1 rounded border bg-background p-2"
+          data-testid="frame-library-list"
+        >
+          <div className="flex items-center justify-between text-[11px] font-medium">
+            <span>Pustaka frame</span>
+            <button
+              type="button"
+              className="text-muted-foreground"
+              onClick={() => setShowLibrary(false)}
+            >
+              Tutup
+            </button>
+          </div>
+          <div className="grid max-h-72 grid-cols-3 gap-1 overflow-auto">
+            {env.libraryFrames.map((lib) => (
+              <button
+                key={lib.id}
+                type="button"
+                title={`${lib.name} · ${lib.slots.length} foto`}
+                data-testid="frame-library-item"
+                className="flex flex-col items-center gap-0.5 rounded border p-1 text-[10px] hover:border-primary"
+                onClick={() => addFromLibrary(lib)}
+              >
+                <img
+                  src={lib.url}
+                  alt={lib.name}
+                  className="h-24 w-full bg-[repeating-conic-gradient(#e5e7eb_0%_25%,#fff_0%_50%)] bg-[length:8px_8px] object-contain"
+                />
+                <span className="w-full truncate">{lib.name}</span>
+                <span className="text-muted-foreground">{lib.slots.length} foto</span>
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
       {atLimit && (
         <p className="rounded bg-amber-50 p-2 text-[11px] text-amber-800" data-testid="frame-limit">
           Paket Anda dibatasi {env.maxFrames} frame. Upgrade paket untuk menambah frame.

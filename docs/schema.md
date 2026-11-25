@@ -302,6 +302,7 @@ Semua tabel bisnis punya `org_id`, `created_at`, `updated_at`. ID memakai `cuid2
 | `pairing_codes` | code, device_fingerprint, expires_at, claimed_booth_id |
 | `assets` | org_id, kind, storage_path, sha256, bytes, width, height |
 | `templates` | id, name, preview, config (jsonb parsial), is_public |
+| `library_frames` | id, name, description, url, sha256, bytes, mime_type, width, height, slots (jsonb `PhotoSlot[]`, px strip), sort_order, is_published, created_by — pustaka frame platform (2026-11-26), tanpa `org_id` |
 
 ### B.3 Sesi & pembayaran
 | Tabel | Kolom utama |
@@ -449,3 +450,9 @@ File `agent.sqlite` di folder data agent (Windows `%APPDATA%\photobooth-agent`, 
 - `voucher-input` varian `field` kini hanya kolom kode (tinggi `min(height, fontSize × 2,4)`); varian `keypad` (kolom + keypad dalam satu kotak) tidak berubah. Keyboard/scanner tetap ditangani `voucher-input`.
 - Migrasi 1 → 2 (`migrate.ts`): setiap `voucher-input` `field` yang di v1 menggambar keypad dipecah menjadi kolom + `voucher-keypad` (id `<id>-keypad`) dengan geometri v1 persis (keypad di bawah atau di samping, celah 8 px, ukuran angka v1), dibulatkan 2 desimal. Kotak yang di v1 terlalu kecil untuk keypad tetap satu elemen. Config lama dimigrasi saat dibaca (editor, Kiosk, agent, worker, halaman booth Studio, rollback, kartu Pembayaran).
 - Template bawaan: kolom 700×96 di (960, 420) + keypad 440×248 di (960, 532).
+
+### Migrasi DB 0008–0009 (2026-11-26)
+- `0008_library_frames`: tabel global `library_frames`. RLS: `authenticated` hanya membaca baris `is_published`; tulis lewat API admin platform (`/admin/library-frames`, koneksi istimewa). URL file wajib lolos `isAllowedAssetUrl`.
+- `0009_assets_bucket`: bucket Supabase Storage publik `assets` + policy `storage.objects`: anggota org membaca/menulis/menimpa hanya di folder `<org_id>/…`. Dilewati di database tanpa Supabase Storage (PGlite tes).
+- Frame dari pustaka yang dipakai booth disalin ke config: `AssetRef` dengan id `lib-<libraryFrameId>` (url, sha256, bytes) + slot. Bentuk `BoothConfig` tidak berubah, tanpa migrasi config.
+

@@ -11,3 +11,4 @@ export * from './payment-repo';
 export * from './output-repo';
 export * from './billing-repo';
 export * from './report-repo';
+export * from './library-repo';
