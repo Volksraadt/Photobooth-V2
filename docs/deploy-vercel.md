@@ -1,6 +1,11 @@
 # Deploy sementara ke Vercel (tanpa domain sendiri)
 
-Status: disiapkan 2026-11-25. Domain memakai `*.vercel.app` bawaan Vercel.
+Status: **ter-deploy 2026-11-25** (Hobby). Domain bawaan Vercel:
+
+- API: https://photobooth-api-one.vercel.app (proyek `photobooth-api`, Root `apps/api`, preset Other)
+- Studio: https://photobooth-studio-coral.vercel.app (proyek `photobooth-studio`, Root `apps/studio`)
+
+Sudah diatur: env kedua proyek (Secret; `NEXT_PUBLIC_*` harus tipe Config), Supabase Site URL + redirect `/auth/callback` Vercel (localhost tetap diizinkan), redirect URI Google OAuth ke API Vercel, Notification URL Midtrans sandbox ke `/webhooks/midtrans/br4gkl87qobjwo2bag043wxn` (org Volksraadt Studio) dan `/webhooks/billing`. Belum: laptop booth (agent/kiosk/worker) masih memakai API lokal.
 
 ## Bagian dan tempatnya
 
