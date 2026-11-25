@@ -1,5 +1,5 @@
 import { CURRENT_SCHEMA_VERSION } from './booth-config';
-import { validateBoothConfig, type ValidationResult } from './validate';
+import { validateBoothConfig, type ValidationIssue, type ValidationResult } from './validate';
 
 type Migration = (config: Record<string, unknown>) => Record<string, unknown>;
 
@@ -86,10 +86,21 @@ function splitVoucherFieldKeypad(config: Record<string, unknown>): Record<string
   return { ...config, pages: nextPages, schemaVersion: 2 };
 }
 
-/** Upgrade a stored config of any known schemaVersion to the current one, then validate. */
-export function migrateBoothConfig(input: unknown): ValidationResult {
+export type UpgradeResult =
+  | { success: true; config: Record<string, unknown> }
+  | { success: false; issues: ValidationIssue[] };
+
+/**
+ * Brings a stored config of any known schemaVersion to the current shape WITHOUT validating it.
+ * Drafts may be semantically invalid while editing; they must still be upgraded, or every later
+ * save/publish fails on the version check.
+ */
+export function upgradeBoothConfig(input: unknown): UpgradeResult {
   if (typeof input !== 'object' || input === null) {
-    return validateBoothConfig(input);
+    return {
+      success: false,
+      issues: [{ code: 'schema.not-object', path: '', message: 'Desain bukan objek config.' }],
+    };
   }
   let config = input as Record<string, unknown>;
   let version = config.schemaVersion;
@@ -126,5 +137,13 @@ export function migrateBoothConfig(input: unknown): ValidationResult {
     config = step(config);
     version += 1;
   }
-  return validateBoothConfig(config);
+  return { success: true, config };
+}
+
+/** Upgrade a stored config of any known schemaVersion to the current one, then validate. */
+export function migrateBoothConfig(input: unknown): ValidationResult {
+  if (typeof input !== 'object' || input === null) return validateBoothConfig(input);
+  const upgraded = upgradeBoothConfig(input);
+  if (!upgraded.success) return upgraded;
+  return validateBoothConfig(upgraded.config);
 }

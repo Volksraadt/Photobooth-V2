@@ -62,11 +62,20 @@ const PAGE_LABEL: Record<PageType, string> = {
 export function validateBoothConfig(input: unknown): ValidationResult {
   const parsed = BoothConfigSchema.safeParse(input);
   if (!parsed.success) {
-    return { success: false, issues: parsed.error.issues.map(fromZodIssue) };
+    return { success: false, issues: parsed.error.issues.map((i) => fromZodIssue(i, input)) };
   }
   const issues = checkSemantics(parsed.data);
   if (issues.length > 0) return { success: false, issues };
   return { success: true, config: parsed.data, issues: [] };
+}
+
+/**
+ * Shape-only check (no semantic rules), for drafts that may be incomplete while editing.
+ * Returns readable issues ("Halaman Pembayaran › elemen \"Kolom voucher\" › ...") or [] when ok.
+ */
+export function shapeIssues(input: unknown): ValidationIssue[] {
+  const parsed = BoothConfigSchema.safeParse(input);
+  return parsed.success ? [] : parsed.error.issues.map((i) => fromZodIssue(i, input));
 }
 
 /** Throws with all issue messages joined; for code paths where an invalid config is a bug. */
@@ -79,12 +88,95 @@ export function assertValidBoothConfig(input: unknown): BoothConfig {
   return result.config;
 }
 
-function fromZodIssue(issue: z.core.$ZodIssue): ValidationIssue {
+function fromZodIssue(issue: z.core.$ZodIssue, input: unknown): ValidationIssue {
   return {
     code: `schema.${issue.code}`,
     path: issue.path.map(String).join('.'),
-    message: issue.message,
+    message: `${describePath(issue.path, input)}: ${zodMessage(issue)}`,
   };
+}
+
+/** Page names as the Studio editor shows them (Desain → Halaman). */
+const EDITOR_PAGE_LABEL: Record<PageType, string> = {
+  cover: 'Cover',
+  tutorial: 'Tutorial',
+  framePick: 'Pilih Frame',
+  payment: 'Pembayaran',
+  capture: 'Foto',
+  review: 'Review',
+  processing: 'Proses',
+  result: 'Hasil',
+  error: 'Error',
+};
+
+const SECTION_LABEL: Record<string, string> = {
+  schemaVersion: 'Versi skema desain',
+  flow: 'Atur → Alur/Pembayaran',
+  pricing: 'Atur → Harga',
+  output: 'Atur → Output',
+  artboard: 'Atur → Artboard',
+  admin: 'Atur → PIN admin',
+  theme: 'Tema',
+  filters: 'Filter',
+  assets: 'Aset',
+};
+
+const FIELD_LABEL: Record<string, string> = {
+  textStyle: 'gaya teks',
+  keyStyle: 'gaya tombol',
+  fontSize: 'ukuran huruf',
+  fontWeight: 'ketebalan huruf',
+  width: 'lebar',
+  height: 'tinggi',
+  x: 'posisi X',
+  y: 'posisi Y',
+  gap: 'jarak',
+  color: 'warna',
+  fill: 'isi',
+  variant: 'gaya',
+  action: 'aksi',
+};
+
+/** "Halaman Pembayaran › elemen \"Kolom voucher\" › gaya teks › ukuran huruf" for a zod path. */
+function describePath(path: readonly PropertyKey[], input: unknown): string {
+  const parts: string[] = [];
+  let node: unknown = input;
+  for (let i = 0; i < path.length; i++) {
+    const key = path[i]!;
+    const parent = path[i - 1];
+    const child = (node as Record<PropertyKey, unknown> | undefined)?.[key];
+    if (i === 0 && typeof key === 'string' && key !== 'pages' && key !== 'frames') {
+      parts.push(SECTION_LABEL[key] ?? key);
+    } else if (parent === 'pages' && typeof key === 'string') {
+      parts.push(`Halaman ${EDITOR_PAGE_LABEL[key as PageType] ?? key}`);
+    } else if ((parent === 'elements' || parent === 'frames') && typeof key === 'number') {
+      const item = child as { name?: string; type?: string } | undefined;
+      const name = item?.name || item?.type || `#${key + 1}`;
+      parts.push(`${parent === 'frames' ? 'frame' : 'elemen'} "${name}"`);
+    } else if (key !== 'pages' && key !== 'elements' && key !== 'frames') {
+      parts.push(typeof key === 'string' ? (FIELD_LABEL[key] ?? key) : `#${String(key)}`);
+    }
+    node = child;
+  }
+  return parts.length ? parts.join(' › ') : 'Desain';
+}
+
+/** Short Indonesian text for the common zod issues (the rest keep zod's English text). */
+function zodMessage(issue: z.core.$ZodIssue): string {
+  switch (issue.code) {
+    case 'invalid_value':
+      return `nilai tidak valid (seharusnya ${issue.values.map((v) => JSON.stringify(v)).join(' atau ')})`;
+    case 'invalid_type':
+      return `tipe data salah (seharusnya ${issue.expected})`;
+    case 'too_small':
+      return `terlalu kecil (minimal ${String(issue.minimum)})`;
+    case 'too_big':
+      return `terlalu besar (maksimal ${String(issue.maximum)})`;
+    case 'invalid_union':
+      return 'bentuk elemen tidak dikenali';
+    default:
+      return issue.message;
+  }
 }
 
 function checkSemantics(config: BoothConfig): ValidationIssue[] {

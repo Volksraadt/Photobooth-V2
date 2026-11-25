@@ -540,7 +540,7 @@ function IssueList({ issues }: { issues: ValidationIssue[] }) {
               }}
             >
               {page && <span className="mr-1 rounded bg-muted px-1">{PAGE_LABEL[page]}</span>}
-              {i.message}
+              {page ? i.message.replace(/^Halaman [^›]+› /, '') : i.message}
             </button>
           </li>
         );

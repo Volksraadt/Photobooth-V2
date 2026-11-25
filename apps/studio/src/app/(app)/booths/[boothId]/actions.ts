@@ -12,11 +12,16 @@ import {
   revokeDevice,
   saveDraft,
 } from '@pb/db';
-import { migrateBoothConfig, validateBoothConfig, type BoothConfig } from '@pb/schema';
+import {
+  migrateBoothConfig,
+  upgradeBoothConfig,
+  validateBoothConfig,
+  type BoothConfig,
+} from '@pb/schema';
 
 /** Stored configs may be of an older schemaVersion: upgrade before using them. */
 const upgraded = (config: unknown): BoothConfig =>
-  ((r) => (r.success ? r.config : (config as BoothConfig)))(migrateBoothConfig(config));
+  ((r) => (r.success ? r.config : config) as BoothConfig)(upgradeBoothConfig(config));
 import { revalidatePath } from 'next/cache';
 import { redirect } from 'next/navigation';
 import { apiFetch } from '@/lib/api';

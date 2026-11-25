@@ -5,6 +5,8 @@ import {
   assetUrlPrefixesFromEnv,
   BoothConfigSchema,
   disallowedAssetIds,
+  shapeIssues,
+  upgradeBoothConfig,
   validateBoothConfig,
   type BoothConfig,
   type ValidationIssue,
@@ -27,6 +29,15 @@ export type PublishResult =
   | { ok: true; version: number; warning?: string | null }
   | { ok: false; message: string; issues?: ValidationIssue[] };
 
+/**
+ * An editor tab opened before a schema upgrade still sends the old schemaVersion: upgrade it here
+ * instead of rejecting every save with "expected <version>".
+ */
+function upgradeIncoming(config: unknown): unknown {
+  const r = upgradeBoothConfig(config);
+  return r.success ? r.config : config;
+}
+
 async function editor() {
   const ctx = await requireOrg();
   if (ctx.org.role === 'operator') throw new Error('Operator tidak dapat mengubah desain.');
@@ -34,12 +45,20 @@ async function editor() {
 }
 
 /** Autosave. The draft may be semantically invalid while editing, but must keep the config shape. */
-export async function saveDraftAction(boothId: string, config: unknown): Promise<SaveResult> {
+export async function saveDraftAction(boothId: string, input: unknown): Promise<SaveResult> {
+  const config = upgradeIncoming(input);
   try {
     const { user } = await editor();
     const parsed = BoothConfigSchema.safeParse(config);
-    if (!parsed.success)
-      return { ok: false, message: 'Bentuk config tidak valid; draft tidak disimpan.' };
+    if (!parsed.success) {
+      const issues = shapeIssues(config);
+      const shown = issues.slice(0, 3).map((i) => i.message);
+      const more = issues.length > 3 ? ` (+${issues.length - 3} lagi)` : '';
+      return {
+        ok: false,
+        message: `Draft tidak disimpan. ${shown.join('; ') || 'Bentuk config tidak valid.'}${more}`,
+      };
+    }
     if (parsed.data.boothId !== boothId) return { ok: false, message: 'Config milik booth lain.' };
     const foreign = foreignAssetMessage(parsed.data);
     if (foreign) return { ok: false, message: foreign };
@@ -56,7 +75,7 @@ export async function saveDraftAction(boothId: string, config: unknown): Promise
 export async function publishPreflightAction(boothId: string, config: unknown): Promise<string[]> {
   try {
     const { org } = await editor();
-    const parsed = BoothConfigSchema.safeParse(config);
+    const parsed = BoothConfigSchema.safeParse(upgradeIncoming(config));
     if (!parsed.success || parsed.data.boothId !== boothId) return [];
     const qris = await qrisSetupWarning(org.id, parsed.data);
     return qris ? [qris] : [];
@@ -66,7 +85,8 @@ export async function publishPreflightAction(boothId: string, config: unknown): 
 }
 
 /** Validate on the server, save the draft, then publish a new version. */
-export async function publishAction(boothId: string, config: unknown): Promise<PublishResult> {
+export async function publishAction(boothId: string, input: unknown): Promise<PublishResult> {
+  const config = upgradeIncoming(input);
   try {
     const { user } = await editor();
     const result = validateBoothConfig(config);

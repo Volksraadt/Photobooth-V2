@@ -392,3 +392,18 @@ describe('migrate v1 → v2: voucher field and keypad become separate elements',
     expect(r.config.pages.payment.elements.some((e) => e.type === 'voucher-keypad')).toBe(false);
   });
 });
+
+describe('readable locations in shape errors', () => {
+  it('names the section, page and element of a zod issue', () => {
+    const old = { ...fresh(), schemaVersion: 1 };
+    expect(issuesOf(old)[0]!.message).toBe('Versi skema desain: nilai tidak valid (seharusnya 2)');
+
+    const c = JSON.parse(JSON.stringify(fresh())) as BoothConfig;
+    const field = c.pages.payment.elements.find((e) => e.type === 'voucher-input')!;
+    (field as { textStyle: { fontSize: number } }).textStyle.fontSize = -5;
+    const msg = issuesOf(c)
+      .map((i) => i.message)
+      .join('\n');
+    expect(msg).toContain('Halaman Pembayaran › elemen "Kolom voucher" › gaya teks › ukuran huruf');
+  });
+});

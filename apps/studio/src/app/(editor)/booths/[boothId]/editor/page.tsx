@@ -1,5 +1,5 @@
 import { getBooth, getOrgPlan, listAssets } from '@pb/db';
-import { migrateBoothConfig, PAGE_TYPES, type PageType } from '@pb/schema';
+import { PAGE_TYPES, upgradeBoothConfig, type BoothConfig, type PageType } from '@pb/schema';
 import { notFound } from 'next/navigation';
 import { EditorShell } from '@/editor/editor-shell';
 import { toAssetItem } from '@/lib/assets';
@@ -32,9 +32,10 @@ export default async function EditorPage({
     return { row, assets, plan };
   });
   if (!data) notFound();
-  const migrated = migrateBoothConfig(data.row.draft!.config);
-  // Drafts may be semantically invalid while editing; migrate only fixes old shapes.
-  const config = migrated.success ? migrated.config : data.row.draft!.config;
+  // Upgrade old shapes WITHOUT validating: a draft may be semantically invalid while editing, and
+  // falling back to the raw (old schemaVersion) draft made every later save/publish fail.
+  const upgraded = upgradeBoothConfig(data.row.draft!.config);
+  const config = (upgraded.success ? upgraded.config : data.row.draft!.config) as BoothConfig;
 
   return (
     <EditorShell
