@@ -194,6 +194,7 @@ test('devices: offline after 5 minutes without heartbeat, paper counter, revoke'
   // Revoke.
   await page.goto('/devices');
   await page.getByTestId(`revoke-${old}`).click();
+  await page.getByTestId(`revoke-${old}-confirm`).click();
   await expect(page.getByTestId(`device-status-${old}`)).toHaveAttribute('data-status', 'revoked');
   await page.goto('/audit');
   await expect(

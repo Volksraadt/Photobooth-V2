@@ -1,11 +1,23 @@
-import { listAuditActions, listAuditLogs } from '@pb/db';
+import { describeAuditEntities, listAuditActions, listAuditLogs } from '@pb/db';
 import { Alert, Button, Card, CardContent } from '@pb/ui';
+import Link from 'next/link';
 import { redirect } from 'next/navigation';
 import { getEntitlements, hasFeature } from '@/lib/entitlements';
 import { formatDateTime, nowMs } from '@/lib/format';
 import { asUser, requireOrg } from '@/lib/org';
 
 const DAY = 86_400_000;
+
+/** Objects without their own page or name lookup. */
+const ENTITY_LABEL: Record<string, string> = {
+  drive_connections: 'Google Drive',
+  payment_credentials: 'Kredensial Midtrans',
+  subscription: 'Langganan',
+  booth: 'Booth',
+  booth_config: 'Desain booth',
+  session: 'Sesi',
+  device: 'Perangkat',
+};
 
 /** Human text for the actions we log (anything else shows its raw key). */
 const ACTION_LABEL: Record<string, string> = {
@@ -42,15 +54,19 @@ export default async function AuditPage({
   if (org.role === 'operator') redirect('/booths');
   const ent = await getEntitlements(user, org.id);
   const full = hasFeature(ent, 'auditLog');
-  const { logs, actions } = await asUser(user, async (tx) => ({
-    logs: await listAuditLogs(tx, {
+  const { logs, actions, names } = await asUser(user, async (tx) => {
+    const logs = await listAuditLogs(tx, {
       orgId: org.id,
       action: sp.action || null,
       since: full ? null : new Date(nowMs() - 30 * DAY),
       limit: full ? 500 : 200,
-    }),
-    actions: await listAuditActions(tx, org.id),
-  }));
+    });
+    return {
+      logs,
+      actions: await listAuditActions(tx, org.id),
+      names: await describeAuditEntities(tx, org.id, logs),
+    };
+  });
 
   return (
     <div className="space-y-6">
@@ -104,13 +120,38 @@ export default async function AuditPage({
                   <tr key={l.id} className="align-top" data-action={l.action}>
                     <td className="whitespace-nowrap py-1">{formatDateTime(l.at, org.timezone)}</td>
                     <td>{ACTION_LABEL[l.action] ?? l.action}</td>
-                    <td className="break-all font-mono text-xs">
-                      {l.entity}
-                      {l.entityId ? `:${l.entityId.slice(0, 10)}` : ''}
+                    <td className="text-xs">
+                      {(() => {
+                        const named = l.entityId ? names.get(`${l.entity}:${l.entityId}`) : null;
+                        if (named?.href)
+                          return (
+                            <Link href={named.href} className="underline">
+                              {named.label}
+                            </Link>
+                          );
+                        if (named) return named.label;
+                        return (
+                          <span className="text-muted-foreground">
+                            {ENTITY_LABEL[l.entity] ?? l.entity}
+                            {l.entityId && !ENTITY_LABEL[l.entity]
+                              ? ` ${l.entityId.slice(0, 8)}`
+                              : ''}
+                            {l.entityId &&
+                            ENTITY_LABEL[l.entity] &&
+                            l.entity !== 'drive_connections' &&
+                            l.entity !== 'subscription' &&
+                            l.entity !== 'payment_credentials'
+                              ? ' (sudah dihapus)'
+                              : ''}
+                          </span>
+                        );
+                      })()}
                     </td>
                     <td className="text-xs text-muted-foreground">
                       {!l.actorId
-                        ? 'sistem / perangkat'
+                        ? l.entity === 'session'
+                          ? 'Perangkat booth'
+                          : 'Sistem'
                         : l.actorId === user.id
                           ? 'Anda'
                           : `anggota ${l.actorId.slice(0, 8)}`}

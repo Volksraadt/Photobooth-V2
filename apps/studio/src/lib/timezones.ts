@@ -52,3 +52,8 @@ export function formatInZone(d: Date, timeZone: string): string {
     timeZone,
   }).format(d);
 }
+
+/** "WIB" for a booth zone; other zones are shown as-is. */
+export function timezoneLabel(value: string): string {
+  return BOOTH_TIMEZONES.find((tz) => tz.value === value)?.label.split(' ')[0] ?? value;
+}

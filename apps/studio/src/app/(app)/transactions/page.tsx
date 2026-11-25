@@ -1,6 +1,7 @@
 import { listBooths, listOrgDevices, listTransactions } from '@pb/db';
-import { Alert, Button, Card, CardContent } from '@pb/ui';
+import { Alert, Card, CardContent } from '@pb/ui';
 import Link from 'next/link';
+import { RangeFilter } from '@/components/range-filter';
 import { UploadCell } from '@/components/session-upload';
 import { getEntitlements, recapDays } from '@/lib/entitlements';
 import { formatDateTime, formatDay, idr, METHOD_LABEL } from '@/lib/format';
@@ -24,7 +25,8 @@ export default async function TransactionsPage({ searchParams }: { searchParams:
   const sp = await searchParams;
   const { user, org } = await requireOrg();
   const ent = await getEntitlements(user, org.id);
-  const range = resolveRange(sp, todayIn(org.timezone), recapDays(ent));
+  const today = todayIn(org.timezone);
+  const range = resolveRange(sp, today, recapDays(ent));
   const page = Math.max(1, Math.floor(Number(sp.page ?? '1')) || 1);
 
   const data = await asUser(user, async (tx) => {
@@ -53,121 +55,74 @@ export default async function TransactionsPage({ searchParams }: { searchParams:
     if (deviceId) q.set('device', deviceId);
     return `/transactions?${q}`;
   };
+  const rekapQuery = new URLSearchParams({ from: range.from, to: range.to });
+  if (boothId) rekapQuery.set('booth', boothId);
+  if (deviceId) rekapQuery.set('device', deviceId);
+  const rekapLink = `/reports?${rekapQuery}`;
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-semibold">Transaksi</h1>
-        <p className="text-sm text-muted-foreground">
-          {formatDay(range.from)} – {formatDay(range.to)} · {list.total} sesi. Waktu mengikuti zona
-          waktu booth. Sesi dari booth yang offline muncul setelah booth online lagi.
-        </p>
+      <div className="flex flex-wrap items-end justify-between gap-3">
+        <div>
+          <h1 className="text-2xl font-semibold">Transaksi</h1>
+          <p className="text-sm text-muted-foreground">
+            {formatDay(range.from)} – {formatDay(range.to)} · {list.total} sesi. Waktu mengikuti
+            zona waktu booth. Sesi dari booth yang offline muncul setelah booth online lagi.
+          </p>
+        </div>
+        <Link className="rounded border px-3 py-1.5 text-sm hover:bg-muted" href={rekapLink}>
+          Lihat rekap →
+        </Link>
       </div>
       {range.clamped && (
         <Alert>
           Paket {ent?.planName} menampilkan {recapDays(ent)} hari terakhir.
         </Alert>
       )}
-      <form className="flex flex-wrap items-end gap-3 rounded border bg-background p-3 text-sm">
-        <label className="space-y-1">
-          <span className="block text-xs text-muted-foreground">Dari</span>
-          <input
-            type="date"
-            name="from"
-            defaultValue={range.from}
-            max={range.today}
-            className="h-9 rounded-md border bg-background px-2"
-          />
-        </label>
-        <label className="space-y-1">
-          <span className="block text-xs text-muted-foreground">Sampai</span>
-          <input
-            type="date"
-            name="to"
-            defaultValue={range.to}
-            max={range.today}
-            className="h-9 rounded-md border bg-background px-2"
-          />
-        </label>
-        <label className="space-y-1">
-          <span className="block text-xs text-muted-foreground">Booth</span>
-          <select
-            name="booth"
-            defaultValue={boothId ?? ''}
-            className="h-9 rounded-md border bg-background px-2"
-          >
-            <option value="">Semua booth</option>
-            {boothList.map((b) => (
-              <option key={b.id} value={b.id}>
-                {b.name}
-              </option>
-            ))}
-          </select>
-        </label>
-        <label className="space-y-1">
-          <span className="block text-xs text-muted-foreground">Perangkat</span>
-          <select
-            name="device"
-            defaultValue={deviceId ?? ''}
-            className="h-9 rounded-md border bg-background px-2"
-          >
-            <option value="">Semua perangkat</option>
-            {deviceList.map((d) => (
-              <option key={d.id} value={d.id}>
-                {d.name}
-              </option>
-            ))}
-          </select>
-        </label>
-        <Button type="submit">Terapkan</Button>
-      </form>
+      <RangeFilter
+        basePath="/transactions"
+        from={range.from}
+        to={range.to}
+        today={today}
+        booths={boothList.map((b) => ({ id: b.id, name: b.name }))}
+        devices={deviceList.map((d) => ({ id: d.id, name: d.name, boothName: d.boothName }))}
+        boothId={boothId}
+        deviceId={deviceId}
+      />
 
       <Card>
         <CardContent className="overflow-x-auto pt-6">
           {list.rows.length === 0 ? (
             <p className="text-sm text-muted-foreground">Tidak ada sesi pada rentang ini.</p>
           ) : (
-            <table className="data-table w-full text-sm" data-testid="transaction-list">
-              <thead className="text-left text-muted-foreground">
-                <tr>
-                  <th className="py-1">Kode</th>
-                  <th>Booth</th>
-                  <th>Mulai</th>
-                  <th>Metode</th>
-                  <th className="text-right">Kotor</th>
-                  <th className="text-right">Bersih</th>
-                  <th>Status</th>
-                  <th>Cetak</th>
-                  <th>File</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y">
+            <>
+              {/* Narrow screens: one card per session instead of a 9-column table. */}
+              <ul className="divide-y md:hidden" data-testid="transaction-cards">
                 {list.rows.map((s) => (
-                  <tr key={s.id} data-testid={`txn-${s.code}`} className="align-top">
-                    <td className="py-1 font-mono">
-                      <Link href={`/transactions/${s.id}`} className="underline">
+                  <li key={s.id} data-testid={`txn-card-${s.code}`} className="py-3 text-sm">
+                    <div className="flex items-baseline justify-between gap-2">
+                      <Link
+                        href={`/transactions/${s.id}`}
+                        className="font-mono font-medium underline"
+                      >
                         {s.code}
                       </Link>
-                    </td>
-                    <td>{s.boothName}</td>
-                    <td className="whitespace-nowrap">{formatDateTime(s.startedAt, s.timezone)}</td>
-                    <td>
-                      {s.paymentMethod ? METHOD_LABEL[s.paymentMethod] : '—'}
-                      {s.offline && (
-                        <span className="ml-1 rounded bg-amber-100 px-1 text-xs text-amber-800">
-                          offline
-                        </span>
-                      )}
-                    </td>
-                    <td className="text-right">{idr(s.grossAmount)}</td>
-                    <td className="text-right">{idr(s.netAmount)}</td>
-                    <td>{STATUS[s.status] ?? s.status}</td>
-                    <td className="whitespace-nowrap">
-                      {s.print
-                        ? `${s.print.sheets}× ${s.print.status === 'done' ? 'tercetak' : s.print.status}`
-                        : '—'}
-                    </td>
-                    <td className="whitespace-nowrap">
+                      <span className="font-medium">{idr(s.grossAmount)}</span>
+                    </div>
+                    <div className="text-xs text-muted-foreground">
+                      {s.boothName} · {formatDateTime(s.startedAt, s.timezone)}
+                    </div>
+                    <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs">
+                      <span>
+                        {s.paymentMethod ? METHOD_LABEL[s.paymentMethod] : '—'}
+                        {s.offline && ' (offline)'}
+                      </span>
+                      <span>{STATUS[s.status] ?? s.status}</span>
+                      <span>
+                        {s.print
+                          ? `${s.print.sheets}× ${s.print.status === 'done' ? 'tercetak' : s.print.status}`
+                          : 'tanpa cetak'}
+                      </span>
                       <UploadCell
                         session={{
                           id: s.id,
@@ -178,11 +133,72 @@ export default async function TransactionsPage({ searchParams }: { searchParams:
                         }}
                         jobs={s.jobs}
                       />
-                    </td>
-                  </tr>
+                    </div>
+                  </li>
                 ))}
-              </tbody>
-            </table>
+              </ul>
+              <table
+                className="data-table w-full text-sm max-md:hidden"
+                data-testid="transaction-list"
+              >
+                <thead className="text-left text-muted-foreground">
+                  <tr>
+                    <th className="py-1">Kode</th>
+                    <th>Booth</th>
+                    <th>Mulai</th>
+                    <th>Metode</th>
+                    <th className="text-right">Kotor</th>
+                    <th className="text-right">Bersih</th>
+                    <th>Status</th>
+                    <th>Cetak</th>
+                    <th>File</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y">
+                  {list.rows.map((s) => (
+                    <tr key={s.id} data-testid={`txn-${s.code}`} className="align-top">
+                      <td className="py-1 font-mono">
+                        <Link href={`/transactions/${s.id}`} className="underline">
+                          {s.code}
+                        </Link>
+                      </td>
+                      <td>{s.boothName}</td>
+                      <td className="whitespace-nowrap">
+                        {formatDateTime(s.startedAt, s.timezone)}
+                      </td>
+                      <td>
+                        {s.paymentMethod ? METHOD_LABEL[s.paymentMethod] : '—'}
+                        {s.offline && (
+                          <span className="ml-1 rounded bg-amber-100 px-1 text-xs text-amber-800">
+                            offline
+                          </span>
+                        )}
+                      </td>
+                      <td className="text-right">{idr(s.grossAmount)}</td>
+                      <td className="text-right">{idr(s.netAmount)}</td>
+                      <td>{STATUS[s.status] ?? s.status}</td>
+                      <td className="whitespace-nowrap">
+                        {s.print
+                          ? `${s.print.sheets}× ${s.print.status === 'done' ? 'tercetak' : s.print.status}`
+                          : '—'}
+                      </td>
+                      <td className="whitespace-nowrap">
+                        <UploadCell
+                          session={{
+                            id: s.id,
+                            code: s.code,
+                            status: s.status,
+                            filesCompleteAt: null,
+                            driveFolderUrl: s.driveFolderUrl,
+                          }}
+                          jobs={s.jobs}
+                        />
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </>
           )}
           {pages > 1 && (
             <div className="mt-4 flex items-center justify-between text-sm">

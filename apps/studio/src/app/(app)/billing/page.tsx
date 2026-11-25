@@ -1,7 +1,10 @@
+import { listBooths } from '@pb/db';
 import { Alert, Card, CardContent, CardDescription, CardHeader, CardTitle } from '@pb/ui';
 import { apiFetch } from '@/lib/api';
-import { formatDateTime, idr } from '@/lib/format';
-import { requireOrg } from '@/lib/org';
+import { formatDateTime, idr, nowMs } from '@/lib/format';
+import { asUser, requireOrg } from '@/lib/org';
+
+const DAY = 86_400_000;
 import type { InvoiceView } from './actions';
 import { PlanCheckout } from './checkout';
 
@@ -59,7 +62,8 @@ const FEATURES: [string, string][] = [
 
 /** Plans, current subscription and invoices. Payment goes to the PLATFORM's Midtrans account. */
 export default async function BillingPage() {
-  const { org } = await requireOrg();
+  const { user, org } = await requireOrg();
+  const boothCount = (await asUser(user, (tx) => listBooths(tx, org.id))).length;
   const canEdit = org.role !== 'operator';
   let state: BillingState | null = null;
   let error: string | null = null;
@@ -71,6 +75,13 @@ export default async function BillingPage() {
     error = 'API tidak dapat dihubungi.';
   }
   const e = state?.entitlements ?? null;
+  const starter = state?.plans.find((p) => p.code === 'starter') ?? null;
+  const daysLeft = e?.periodEnd
+    ? Math.max(0, Math.ceil((new Date(e.periodEnd).getTime() - nowMs()) / DAY))
+    : null;
+  const canBuy = !!state?.plans.some(
+    (p) => p.code !== 'starter' && p.priceMonthly && state.billing.mode !== 'disabled',
+  );
   const open = (code: string) =>
     state?.invoices.find((i) => i.status === 'pending' && i.planCode === code) ?? null;
 
@@ -110,10 +121,40 @@ export default async function BillingPage() {
                 : ''}
             </CardDescription>
           </CardHeader>
+          {(e.state === 'trial' || e.state === 'active') && e.planCode !== 'starter' && (
+            <CardContent className="space-y-2 text-sm" data-testid="plan-next">
+              {daysLeft !== null && (
+                <p>
+                  <b>{daysLeft} hari lagi</b>
+                  {e.state === 'trial' ? ' masa percobaan.' : ' sampai perpanjangan.'}
+                </p>
+              )}
+              <p className="text-muted-foreground">
+                Bila tidak {e.state === 'trial' ? 'berlangganan' : 'diperpanjang'}, ada masa
+                tenggang singkat dengan fitur penuh, lalu paket turun ke Starter
+                {starter
+                  ? ` (${lim(starter.limits.maxBooths, 'booth')}, ${lim(starter.limits.maxDevicesPerBooth, 'perangkat / booth')}, tanpa video, dengan watermark)`
+                  : ''}
+                . Booth yang sudah ada tetap berjalan.
+              </p>
+              {starter?.limits.maxBooths != null && boothCount > starter.limits.maxBooths && (
+                <p className="text-amber-700" data-testid="plan-over-starter">
+                  Anda punya {boothCount} booth, sedangkan Starter hanya {starter.limits.maxBooths}.
+                  Setelah turun paket, booth baru tidak bisa dibuat sampai jumlahnya sesuai batas.
+                </p>
+              )}
+              {!canBuy && (
+                <p className="text-muted-foreground">
+                  Paket berbayar belum bisa dibeli online di server ini. Hubungi admin platform
+                  untuk berlangganan.
+                </p>
+              )}
+            </CardContent>
+          )}
         </Card>
       )}
 
-      <div className="grid gap-4 lg:grid-cols-3" data-testid="plan-grid">
+      <div className="grid gap-4 sm:grid-cols-3" data-testid="plan-grid">
         {state?.plans.map((p) => {
           const current = e?.planCode === p.code && e.state !== 'grace';
           const lower =
@@ -176,7 +217,9 @@ export default async function BillingPage() {
                     />
                   ) : (
                     <p className="text-xs text-muted-foreground">
-                      {p.priceMonthly ? 'Pembayaran online belum aktif.' : 'Belum bisa dibeli.'}
+                      {p.priceMonthly
+                        ? 'Pembayaran online belum aktif.'
+                        : 'Harga belum ditetapkan; belum bisa dibeli online.'}
                     </p>
                   ))}
               </CardContent>

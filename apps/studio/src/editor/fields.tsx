@@ -1,7 +1,16 @@
 'use client';
 
 import { cn } from '@pb/ui';
-import { useState, type ReactNode } from 'react';
+import { createContext, useContext, useState, type ReactNode } from 'react';
+
+/**
+ * Field layout: `narrow` (properties panel: fixed 84px label column) or `wide` (settings view:
+ * the label takes the free space so long Indonesian labels are not cut off).
+ */
+const FieldLayoutContext = createContext<'narrow' | 'wide'>('narrow');
+export const WideFields = ({ children }: { children: ReactNode }) => (
+  <FieldLayoutContext.Provider value="wide">{children}</FieldLayoutContext.Provider>
+);
 
 export const inputCls =
   'h-8 w-full rounded border border-input bg-background px-2 text-xs focus:outline-none focus:ring-1 focus:ring-ring';
@@ -29,9 +38,17 @@ export function Section({
 }
 
 export function Row({ label, children }: { label: string; children: ReactNode }) {
+  const layout = useContext(FieldLayoutContext);
   return (
-    <label className="grid grid-cols-[84px_1fr] items-center gap-2 text-xs">
-      <span className="truncate text-muted-foreground">{label}</span>
+    <label
+      className={cn(
+        'grid items-center gap-2 text-xs',
+        layout === 'wide' ? 'grid-cols-[minmax(0,1fr)_minmax(7rem,10rem)]' : 'grid-cols-[84px_1fr]',
+      )}
+    >
+      <span className="truncate text-muted-foreground" title={label}>
+        {label}
+      </span>
       <div className="min-w-0">{children}</div>
     </label>
   );
@@ -51,6 +68,10 @@ export function NumberField({
   max,
   testId,
   compact,
+  hint,
+  format,
+  disabled,
+  placeholder,
 }: {
   label: string;
   value: number | undefined;
@@ -60,10 +81,22 @@ export function NumberField({
   max?: number;
   testId?: string;
   compact?: boolean;
+  /** Full name shown as a tooltip (compact labels are short). */
+  hint?: string;
+  /** Display format while not editing, e.g. thousands separators for prices. */
+  format?: (v: number) => string;
+  disabled?: boolean;
+  placeholder?: string;
 }) {
   const [text, setText] = useState(value === undefined ? '' : String(value));
   const [editing, setEditing] = useState(false);
-  const shown = editing ? text : value === undefined ? '' : String(round(value));
+  const shown = editing
+    ? text
+    : value === undefined
+      ? ''
+      : format
+        ? format(round(value))
+        : String(round(value));
   const commit = () => {
     setEditing(false);
     const n = Number(text.replace(',', '.'));
@@ -73,9 +106,12 @@ export function NumberField({
   };
   const input = (
     <input
-      className={inputCls}
+      className={cn(inputCls, 'disabled:opacity-50')}
       inputMode="decimal"
       data-testid={testId}
+      title={hint}
+      disabled={disabled}
+      placeholder={placeholder}
       value={shown}
       onFocus={() => {
         setText(value === undefined ? '' : String(round(value)));
@@ -101,8 +137,8 @@ export function NumberField({
   );
   if (compact) {
     return (
-      <label className="flex items-center gap-1 text-xs">
-        <span className="w-4 shrink-0 text-muted-foreground">{label}</span>
+      <label className="flex items-center gap-1 text-xs" title={hint}>
+        <span className="shrink-0 text-muted-foreground">{label}</span>
         {input}
       </label>
     );

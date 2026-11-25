@@ -67,6 +67,14 @@ describe('DriveClient', () => {
     expect(await drive.accountEmail()).toBe('owner@example.test');
   });
 
+  it('lists only top-level folders as root folder candidates', async () => {
+    const top = await drive.ensureFolder('Root Candidate', null);
+    await drive.ensureFolder('composite', top.id);
+    const names = (await drive.listAppFolders()).map((f) => f.name);
+    expect(names).toContain('Root Candidate');
+    expect(names).not.toContain('composite');
+  });
+
   it('classifies a missing folder', async () => {
     expect(await drive.getFolder('does-not-exist')).toBeNull();
   });

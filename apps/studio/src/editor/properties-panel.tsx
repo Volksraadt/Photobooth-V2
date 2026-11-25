@@ -167,7 +167,8 @@ function GeometrySection({ el }: { el: Element }) {
         />
         <NumberField
           compact
-          label="W"
+          label="Lebar"
+          hint="Lebar (px artboard)"
           testId="prop-w"
           value={el.width}
           min={1}
@@ -175,7 +176,8 @@ function GeometrySection({ el }: { el: Element }) {
         />
         <NumberField
           compact
-          label="H"
+          label="Tinggi"
+          hint="Tinggi (px artboard)"
           testId="prop-h"
           value={el.height}
           min={1}
@@ -185,14 +187,16 @@ function GeometrySection({ el }: { el: Element }) {
       <Grid2>
         <NumberField
           compact
-          label="°"
+          label="Rotasi"
+          hint="Rotasi (derajat)"
           testId="prop-rotation"
           value={el.rotation}
           onCommit={(rotation) => update('rotasi', { rotation })}
         />
         <NumberField
           compact
-          label="α"
+          label="Opasitas"
+          hint="Opasitas (0 = transparan, 1 = penuh)"
           value={el.opacity}
           min={0}
           max={1}
@@ -374,7 +378,8 @@ function TypeSection({ el, update }: { el: Element; update: Update }) {
           <Grid2>
             <NumberField
               compact
-              label="Kol"
+              label="Kolom"
+              hint="Jumlah kolom"
               value={el.columns}
               min={1}
               max={12}
@@ -382,7 +387,8 @@ function TypeSection({ el, update }: { el: Element; update: Update }) {
             />
             <NumberField
               compact
-              label="Gap"
+              label="Jarak"
+              hint="Jarak antar item (px)"
               value={el.gap}
               min={0}
               onCommit={(gap) => update('gap', { gap })}
@@ -1126,18 +1132,32 @@ function SlotProps({ index }: { index: number }) {
     <div data-testid="slot-props">
       <Section title={`Slot foto ${index}`}>
         <Grid2>
-          <NumberField compact label="X" value={slot.x} onCommit={(x) => set('X', { x })} />
-          <NumberField compact label="Y" value={slot.y} onCommit={(y) => set('Y', { y })} />
           <NumberField
             compact
-            label="W"
+            label="X"
+            hint="Posisi X (px artboard)"
+            value={slot.x}
+            onCommit={(x) => set('X', { x })}
+          />
+          <NumberField
+            compact
+            label="Y"
+            hint="Posisi Y (px artboard)"
+            value={slot.y}
+            onCommit={(y) => set('Y', { y })}
+          />
+          <NumberField
+            compact
+            label="Lebar"
+            hint="Lebar (px artboard)"
             value={slot.width}
             min={1}
             onCommit={(width) => set('W', { width })}
           />
           <NumberField
             compact
-            label="H"
+            label="Tinggi"
+            hint="Tinggi (px artboard)"
             value={slot.height}
             min={1}
             onCommit={(height) => set('H', { height })}
@@ -1146,13 +1166,15 @@ function SlotProps({ index }: { index: number }) {
         <Grid2>
           <NumberField
             compact
-            label="°"
+            label="Rotasi"
+            hint="Rotasi (derajat)"
             value={slot.rotation}
             onCommit={(rotation) => set('Rotasi', { rotation })}
           />
           <NumberField
             compact
-            label="R"
+            label="Sudut"
+            hint="Radius sudut (px)"
             value={slot.borderRadius}
             min={0}
             onCommit={(borderRadius) => set('Radius', { borderRadius })}

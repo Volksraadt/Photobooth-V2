@@ -2,6 +2,7 @@
 
 import { Button, Input, Label } from '@pb/ui';
 import { useActionState } from 'react';
+import { ConfirmSubmit } from '@/components/confirm-submit';
 import { FormMessage } from '@/components/form-message';
 import { IDLE } from '@/lib/form';
 import {
@@ -45,9 +46,13 @@ export function DisconnectDriveButton() {
   const [state, action, pending] = useActionState(disconnectDriveAction, IDLE);
   return (
     <form action={action} className="space-y-2">
-      <Button type="submit" variant="outline" disabled={pending} data-testid="drive-disconnect">
-        Putuskan
-      </Button>
+      <ConfirmSubmit
+        label="Putuskan"
+        confirmLabel="Ya, putuskan"
+        message="Putuskan Google Drive? File sesi baru tidak akan diunggah dan link download pembeli tidak bisa dibuat sampai Drive dihubungkan lagi. File yang sudah ada di Drive tidak dihapus."
+        testId="drive-disconnect"
+        pending={pending}
+      />
       <FormMessage state={state} />
     </form>
   );
@@ -103,8 +108,9 @@ export function RootFolderForm({
         </Button>
       </form>
       <p className="text-xs text-muted-foreground">
-        Aplikasi hanya dapat melihat folder yang dibuatnya sendiri (izin <code>drive.file</code>),
-        jadi folder lama Anda tidak muncul di daftar. Buat folder baru di sini.
+        Daftar hanya berisi folder di level teratas Drive yang dibuat aplikasi ini (izin{' '}
+        <code>drive.file</code>); folder lain milik Anda tidak terlihat. Buat folder baru bila belum
+        ada.
       </p>
       <FormMessage state={state} />
     </div>

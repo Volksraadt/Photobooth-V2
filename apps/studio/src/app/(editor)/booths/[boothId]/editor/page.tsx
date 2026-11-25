@@ -1,15 +1,26 @@
 import { getBooth, getOrgPlan, listAssets } from '@pb/db';
-import { migrateBoothConfig } from '@pb/schema';
+import { migrateBoothConfig, PAGE_TYPES, type PageType } from '@pb/schema';
 import { notFound } from 'next/navigation';
 import { EditorShell } from '@/editor/editor-shell';
 import { toAssetItem } from '@/lib/assets';
 import { asUser, requireOrg } from '@/lib/org';
-import { publishAction, saveDraftAction } from './actions';
+import { publishAction, publishPreflightAction, saveDraftAction } from './actions';
 
 export const metadata = { title: 'Editor booth' };
 
-export default async function EditorPage({ params }: { params: Promise<{ boothId: string }> }) {
+const PANELS = ['design', 'frames', 'filters', 'settings'] as const;
+
+export default async function EditorPage({
+  params,
+  searchParams,
+}: {
+  params: Promise<{ boothId: string }>;
+  searchParams: Promise<{ page?: string; panel?: string }>;
+}) {
   const { boothId } = await params;
+  const query = await searchParams;
+  const page = PAGE_TYPES.find((p): p is PageType => p === query.page);
+  const panel = PANELS.find((p) => p === query.panel);
   const { user, org } = await requireOrg();
   const data = await asUser(user, async (tx) => {
     const row = await getBooth(tx, boothId);
@@ -35,6 +46,11 @@ export default async function EditorPage({ params }: { params: Promise<{ boothId
       maxFrames={data.plan?.limits.maxFrames ?? null}
       saveDraft={saveDraftAction}
       publish={publishAction}
+      preflight={publishPreflightAction}
+      initialUi={{
+        ...(page ? { panel: 'design' as const, target: { kind: 'page' as const, page } } : {}),
+        ...(panel ? { panel } : {}),
+      }}
     />
   );
 }

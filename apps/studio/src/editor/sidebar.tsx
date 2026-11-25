@@ -17,7 +17,7 @@ import { ensureAssetRef } from './assets';
 import { useApply, useCtx, useEditor, useEnv, useStore } from './editor-context';
 import { ELEMENT_LABEL, createElement } from './element-factory';
 import { IconButton, Section } from './fields';
-import { PAGE_LABEL } from './labels';
+import { PAGE_LABEL, readableTokens } from './labels';
 import {
   FRAME_ELEMENT_TYPES,
   addElements,
@@ -386,7 +386,7 @@ export function LayersPanel() {
                       </span>
                     )}
                     <span className="min-w-0 flex-1 truncate">
-                      {el.name || ELEMENT_LABEL[el.type]}
+                      {el.name ? readableTokens(el.name) : ELEMENT_LABEL[el.type]}
                     </span>
                     <button
                       type="button"

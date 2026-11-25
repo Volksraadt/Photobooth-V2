@@ -23,7 +23,7 @@ import { PropertiesPanel } from './properties-panel';
 import { SettingsView } from './settings-view';
 import { useShortcuts } from './shortcuts';
 import { AddElementMenu, FramesList, LayersPanel, PagesList, SlidesBar } from './sidebar';
-import { EditorStore, type EditorPanel } from './store';
+import { EditorStore, type EditorPanel, type UiState } from './store';
 import { issueElementId, useValidation, type IssueGroups } from './validation';
 
 export type PublishFn = (
@@ -34,6 +34,9 @@ export type PublishFn = (
   | { ok: false; message: string; issues?: ValidationIssue[] }
 >;
 
+/** Non-blocking warnings the owner should see before publishing (e.g. QRIS without Midtrans). */
+export type PublishPreflightFn = (boothId: string, config: BoothConfig) => Promise<string[]>;
+
 export function EditorShell(props: {
   initialConfig: BoothConfig;
   boothId: string;
@@ -43,8 +46,11 @@ export function EditorShell(props: {
   maxFrames: number | null;
   saveDraft: SaveDraftFn;
   publish: PublishFn;
+  preflight: PublishPreflightFn;
+  /** Opening state, e.g. from `?page=review` links on the booth page. */
+  initialUi?: Partial<UiState>;
 }) {
-  const [store] = useState(() => new EditorStore(props.initialConfig));
+  const [store] = useState(() => new EditorStore(props.initialConfig, { ui: props.initialUi }));
   const [assets, setAssets] = useState(props.assets);
   const addAsset = useCallback(
     (a: AssetItem) => setAssets((list) => (list.some((x) => x.id === a.id) ? list : [a, ...list])),
@@ -70,13 +76,25 @@ export function EditorShell(props: {
   return (
     <EditorStoreContext.Provider value={store}>
       <EditorEnvContext.Provider value={env}>
-        <EditorLayout saveDraft={props.saveDraft} publish={props.publish} />
+        <EditorLayout
+          saveDraft={props.saveDraft}
+          publish={props.publish}
+          preflight={props.preflight}
+        />
       </EditorEnvContext.Provider>
     </EditorStoreContext.Provider>
   );
 }
 
-function EditorLayout({ saveDraft, publish }: { saveDraft: SaveDraftFn; publish: PublishFn }) {
+function EditorLayout({
+  saveDraft,
+  publish,
+  preflight,
+}: {
+  saveDraft: SaveDraftFn;
+  publish: PublishFn;
+  preflight: PublishPreflightFn;
+}) {
   const store = useStore();
   const env = useEnv();
   const panel = useEditor((s) => s.ui.panel);
@@ -86,6 +104,8 @@ function EditorLayout({ saveDraft, publish }: { saveDraft: SaveDraftFn; publish:
   const canvasPanel = panel === 'design' || panel === 'frames';
   useShortcuts(store, env.canEdit && canvasPanel);
   const [preview, setPreview] = useState<BoothConfig | null>(null);
+  // Below lg the properties panel is a drawer over the canvas, so the canvas keeps usable width.
+  const [propsOpen, setPropsOpen] = useState(false);
 
   const setPanel = (p: EditorPanel) => {
     const { doc, ui } = store.getState();
@@ -110,10 +130,19 @@ function EditorLayout({ saveDraft, publish }: { saveDraft: SaveDraftFn; publish:
         issues={issues}
         flush={flush}
         publish={publish}
+        preflight={preflight}
         onPreview={() => setPreview(store.getState().doc)}
+        propsToggle={
+          canvasPanel ? { open: propsOpen, toggle: () => setPropsOpen((o) => !o) } : null
+        }
       />
-      <div className="flex min-h-0 flex-1">
-        <aside className="flex w-60 shrink-0 flex-col border-r bg-background">
+      <div className={cn('relative flex min-h-0 flex-1', !canvasPanel && 'max-lg:flex-col')}>
+        <aside
+          className={cn(
+            'flex shrink-0 flex-col bg-background',
+            canvasPanel ? 'w-52 border-r lg:w-60' : 'border-b lg:w-60 lg:border-b-0 lg:border-r',
+          )}
+        >
           <nav className="grid grid-cols-4 border-b text-[11px]" data-testid="panel-tabs">
             {(
               [
@@ -162,7 +191,7 @@ function EditorLayout({ saveDraft, publish }: { saveDraft: SaveDraftFn; publish:
               </>
             )}
             {(panel === 'filters' || panel === 'settings') && (
-              <p className="p-3 text-xs text-muted-foreground">
+              <p className="p-3 text-xs text-muted-foreground max-lg:hidden">
                 {panel === 'filters'
                   ? 'Atur filter yang bisa dipilih pembeli di halaman Review.'
                   : 'Alur, harga, output, dan PIN admin booth.'}
@@ -170,16 +199,31 @@ function EditorLayout({ saveDraft, publish }: { saveDraft: SaveDraftFn; publish:
             )}
           </div>
         </aside>
-        <main className="relative min-w-0 flex-1">
+        <main className="relative min-h-0 min-w-0 flex-1">
           {canvasPanel && <Canvas />}
           {panel === 'filters' && <FiltersView />}
           {panel === 'settings' && <SettingsView />}
         </main>
         {canvasPanel && (
           <aside
-            className="w-72 shrink-0 overflow-auto border-l bg-background"
+            className={cn(
+              'w-72 shrink-0 overflow-auto border-l bg-background',
+              'max-lg:absolute max-lg:inset-y-0 max-lg:right-0 max-lg:z-20 max-lg:shadow-xl',
+              !propsOpen && 'max-lg:hidden',
+            )}
             data-testid="properties-panel"
           >
+            <div className="flex items-center justify-between border-b px-3 py-2 lg:hidden">
+              <span className="text-xs font-semibold">Properti</span>
+              <button
+                type="button"
+                className="rounded px-2 text-sm hover:bg-accent"
+                aria-label="Tutup panel properti"
+                onClick={() => setPropsOpen(false)}
+              >
+                ✕
+              </button>
+            </div>
             <fieldset disabled={!env.canEdit}>
               <PropertiesPanel />
             </fieldset>
@@ -211,6 +255,8 @@ function SaveBadge({ status }: { status: SaveStatus }) {
       className={cn(
         'text-xs',
         status.state === 'error' ? 'text-destructive' : 'text-muted-foreground',
+        // Narrow toolbar: only show the badge when there is something to report.
+        status.state === 'saved' && 'max-lg:sr-only',
       )}
     >
       {text}
@@ -223,14 +269,19 @@ function Toolbar({
   issues,
   flush,
   publish,
+  preflight,
   onPreview,
+  propsToggle,
 }: {
   status: SaveStatus;
   issues: IssueGroups;
   flush: () => Promise<boolean>;
   publish: PublishFn;
+  preflight: PublishPreflightFn;
   onPreview: () => void;
+  propsToggle: { open: boolean; toggle: () => void } | null;
 }) {
+  const hasSelection = useEditor((s) => s.ui.selection.length > 0);
   const store = useStore();
   const env = useEnv();
   const canUndo = useEditor((s) => s.canUndo);
@@ -244,10 +295,12 @@ function Toolbar({
   const [result, setResult] = useState<
     | { kind: 'ok'; version: number; warning?: string | null }
     | { kind: 'error'; message: string; issues?: ValidationIssue[] }
+    | { kind: 'confirm'; warnings: string[] }
     | null
   >(null);
 
-  const doPublish = async () => {
+  /** Validate locally, then show warnings first: publishing is immutable, so ask before, not after. */
+  const doPublish = async (confirmed = false) => {
     setResult(null);
     const doc = store.getState().doc;
     const local = validateBoothConfig(doc);
@@ -261,6 +314,14 @@ function Toolbar({
     }
     setPublishing(true);
     await flush();
+    if (!confirmed) {
+      const warnings = await preflight(env.boothId, doc).catch(() => []);
+      if (warnings.length) {
+        setPublishing(false);
+        setResult({ kind: 'confirm', warnings });
+        return;
+      }
+    }
     const res = await publish(env.boothId, doc);
     setPublishing(false);
     setResult(
@@ -279,8 +340,13 @@ function Toolbar({
       >
         ←
       </Link>
-      <span className="max-w-48 truncate text-sm font-semibold">{env.boothName}</span>
-      <div className="mx-2 h-6 w-px bg-border" />
+      <span
+        className="min-w-[3rem] max-w-24 shrink truncate text-sm font-semibold lg:max-w-48"
+        title={env.boothName}
+      >
+        {env.boothName}
+      </span>
+      <div className="mx-1 h-6 w-px bg-border lg:mx-2" />
       <IconButton
         title={undoLabel ? `Undo: ${undoLabel} (Ctrl+Z)` : 'Undo'}
         testId="undo"
@@ -297,7 +363,7 @@ function Toolbar({
       >
         ↷
       </IconButton>
-      <div className="mx-2 h-6 w-px bg-border" />
+      <div className="mx-1 h-6 w-px bg-border lg:mx-2" />
       <IconButton title="Perkecil" onClick={() => store.setUi({ zoom: clampZoom(zoom / 1.2) })}>
         −
       </IconButton>
@@ -314,19 +380,44 @@ function Toolbar({
       >
         Fit
       </IconButton>
-      <IconButton title="100% (Ctrl+1)" testId="zoom-100" onClick={() => store.setUi({ zoom: 1 })}>
-        1:1
-      </IconButton>
-      <IconButton
-        title="Snap ke grid"
-        active={snap}
-        testId="snap-grid"
-        onClick={() => store.setUi({ snapToGrid: !snap })}
-      >
-        Grid
-      </IconButton>
-      <div className="ml-auto flex items-center gap-3">
+      <span className="max-md:hidden">
+        <IconButton
+          title="100% (Ctrl+1)"
+          testId="zoom-100"
+          onClick={() => store.setUi({ zoom: 1 })}
+        >
+          1:1
+        </IconButton>
+      </span>
+      <span className="max-md:hidden">
+        <IconButton
+          title="Snap ke grid"
+          active={snap}
+          testId="snap-grid"
+          onClick={() => store.setUi({ snapToGrid: !snap })}
+        >
+          Grid
+        </IconButton>
+      </span>
+      <div className="ml-auto flex items-center gap-2 lg:gap-3">
         <SaveBadge status={status} />
+        {propsToggle && (
+          <button
+            type="button"
+            data-testid="properties-toggle"
+            aria-pressed={propsToggle.open}
+            onClick={propsToggle.toggle}
+            className={cn(
+              'relative h-8 rounded border px-2 text-xs hover:bg-accent lg:hidden',
+              propsToggle.open && 'bg-accent',
+            )}
+          >
+            Properti
+            {hasSelection && !propsToggle.open && (
+              <span className="absolute -right-1 -top-1 h-2.5 w-2.5 rounded-full bg-primary" />
+            )}
+          </button>
+        )}
         <button
           type="button"
           data-testid="issues-button"
@@ -352,7 +443,7 @@ function Toolbar({
             data-testid="publish-button"
             disabled={publishing}
             className="h-8 rounded bg-primary px-3 text-xs font-medium text-primary-foreground disabled:opacity-60"
-            onClick={doPublish}
+            onClick={() => void doPublish()}
           >
             {publishing ? 'Mempublikasikan…' : 'Publish'}
           </button>
@@ -360,9 +451,35 @@ function Toolbar({
       </div>
       {(showIssues || result) && (
         <div
-          className="absolute right-3 top-12 z-30 w-96 rounded-md border bg-background p-3 text-xs shadow-lg"
+          className="absolute right-3 top-12 z-30 w-96 max-w-[calc(100vw-1.5rem)] rounded-md border bg-background p-3 text-xs shadow-lg"
           data-testid="publish-result"
         >
+          {result?.kind === 'confirm' && (
+            <div data-testid="publish-confirm">
+              <p className="mb-2 font-medium">Periksa sebelum publish:</p>
+              <ul className="mb-3 list-disc space-y-1 pl-4 text-amber-700">
+                {result.warnings.map((w) => (
+                  <li key={w}>{w}</li>
+                ))}
+              </ul>
+              <div className="flex flex-wrap items-center gap-2">
+                <button
+                  type="button"
+                  data-testid="publish-confirm-go"
+                  className="h-8 rounded bg-primary px-3 font-medium text-primary-foreground"
+                  onClick={() => void doPublish(true)}
+                >
+                  Tetap publish
+                </button>
+                <Link
+                  href="/integrations"
+                  className="h-8 rounded border px-3 leading-8 hover:bg-accent"
+                >
+                  Buka Integrasi
+                </Link>
+              </div>
+            </div>
+          )}
           {result?.kind === 'ok' && (
             <p className="mb-2 text-emerald-700" data-testid="publish-ok">
               Versi {result.version} dipublikasikan. Perangkat booth akan memperbarui tampilan.
@@ -376,9 +493,12 @@ function Toolbar({
           {result?.kind === 'error' && (
             <p className="mb-2 font-medium text-destructive">{result.message}</p>
           )}
-          <IssueList
-            issues={result?.kind === 'error' && result.issues ? result.issues : issues.all}
-          />
+          {/* After a publish or a confirm prompt the draft is valid: no "no problems" line. */}
+          {(result === null || result.kind === 'error') && (
+            <IssueList
+              issues={result?.kind === 'error' && result.issues ? result.issues : issues.all}
+            />
+          )}
           <button
             type="button"
             className="mt-2 text-muted-foreground underline"

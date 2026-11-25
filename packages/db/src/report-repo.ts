@@ -741,3 +741,68 @@ export async function listAuditActions(db: DbOrTx, orgId: string) {
   );
   return rows.map((r) => r.action);
 }
+
+export type AuditEntityLabel = { label: string; href: string | null };
+
+/**
+ * Human labels for audit log objects ("Booth A · v3", session code, device name) instead of raw
+ * ids. Key: `${entity}:${entityId}`. Unknown or deleted objects are simply missing from the map.
+ * Scoped to the org (and RLS) like every other query.
+ */
+export async function describeAuditEntities(
+  db: DbOrTx,
+  orgId: string,
+  refs: { entity: string; entityId: string | null }[],
+): Promise<Map<string, AuditEntityLabel>> {
+  const ids = (entity: string) => [
+    ...new Set(refs.filter((r) => r.entity === entity && r.entityId).map((r) => r.entityId!)),
+  ];
+  const out = new Map<string, AuditEntityLabel>();
+  const configIds = ids('booth_config');
+  const boothIds = ids('booth');
+  const sessionIds = ids('session');
+  const deviceIds = ids('device');
+  const [configRows, boothRows, sessionRows, deviceRows] = await Promise.all([
+    configIds.length
+      ? db
+          .select({
+            id: boothConfigs.id,
+            version: boothConfigs.version,
+            boothId: booths.id,
+            name: booths.name,
+          })
+          .from(boothConfigs)
+          .innerJoin(booths, eq(booths.id, boothConfigs.boothId))
+          .where(and(eq(boothConfigs.orgId, orgId), inArray(boothConfigs.id, configIds)))
+      : [],
+    boothIds.length
+      ? db
+          .select({ id: booths.id, name: booths.name })
+          .from(booths)
+          .where(and(eq(booths.orgId, orgId), inArray(booths.id, boothIds)))
+      : [],
+    sessionIds.length
+      ? db
+          .select({ id: sessions.id, code: sessions.code })
+          .from(sessions)
+          .where(and(eq(sessions.orgId, orgId), inArray(sessions.id, sessionIds)))
+      : [],
+    deviceIds.length
+      ? db
+          .select({ id: devices.id, name: devices.name })
+          .from(devices)
+          .where(and(eq(devices.orgId, orgId), inArray(devices.id, deviceIds)))
+      : [],
+  ]);
+  for (const r of configRows)
+    out.set(`booth_config:${r.id}`, {
+      label: `${r.name} · v${r.version}`,
+      href: `/booths/${r.boothId}`,
+    });
+  for (const r of boothRows) out.set(`booth:${r.id}`, { label: r.name, href: `/booths/${r.id}` });
+  for (const r of sessionRows)
+    out.set(`session:${r.id}`, { label: `Sesi ${r.code}`, href: `/transactions/${r.id}` });
+  for (const r of deviceRows)
+    out.set(`device:${r.id}`, { label: `Perangkat ${r.name}`, href: `/devices/${r.id}` });
+  return out;
+}

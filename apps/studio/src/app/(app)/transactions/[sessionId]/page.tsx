@@ -61,13 +61,14 @@ export default async function SessionDetailPage({
       </div>
 
       <div className="grid gap-4 md:grid-cols-[220px_1fr]">
-        <Card>
+        {/* Narrow screens: payment and files first, the (tall) strip below them. */}
+        <Card className="max-md:order-last">
           <CardContent className="pt-4">
             {d.compositePath ? (
               <img
                 src={`/api/session-thumbnail/${s.id}`}
                 alt={`Strip sesi ${s.code}`}
-                className="w-full rounded border"
+                className="mx-auto w-full max-w-[200px] rounded border md:max-w-none"
                 loading="lazy"
                 data-testid="session-thumbnail"
               />

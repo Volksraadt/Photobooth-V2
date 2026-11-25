@@ -16,6 +16,7 @@ import { PageRenderer, type RenderRuntime } from '@pb/renderer';
 import type { BoothConfig } from '@pb/schema';
 import { useActorRef, useSelector } from '@xstate/react';
 import { useEffect, useMemo, useState } from 'react';
+import { PAGE_LABEL } from './labels';
 import { fromCallback, fromPromise } from 'xstate';
 
 const inSeconds = (sec: number) => new Date(Date.now() + sec * 1000).toISOString();
@@ -36,7 +37,7 @@ export function PreviewDialog({
   const [source, setSource] = useState<'webcam' | 'mock'>('webcam');
   return (
     <div className="fixed inset-0 z-50 flex flex-col bg-black/90" data-testid="preview-dialog">
-      <div className="flex items-center gap-3 px-4 py-2 text-sm text-white">
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-1 px-4 py-2 text-sm text-white">
         <span className="font-medium">Pratinjau alur</span>
         <label className="flex items-center gap-1 text-xs">
           Kamera
@@ -49,7 +50,7 @@ export function PreviewDialog({
             <option value="mock">Kamera tiruan</option>
           </select>
         </label>
-        <span className="text-xs text-neutral-400">
+        <span className="order-last basis-full text-xs text-neutral-400 md:order-none md:basis-auto">
           Pembayaran disimulasikan. Tidak ada yang disimpan.
         </span>
         <button
@@ -198,7 +199,9 @@ function PreviewPlayer({
         />
       </div>
       <div className="flex items-center gap-2 px-4 py-2 text-xs text-neutral-300">
-        <span data-testid="preview-state">{JSON.stringify(snapshot.value)}</span>
+        <span data-testid="preview-state" data-state={JSON.stringify(snapshot.value)}>
+          Halaman: {PAGE_LABEL[page]}
+        </span>
         {snapshot.matches('payment') && (
           <button
             type="button"

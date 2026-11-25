@@ -1,9 +1,10 @@
 import { deviceConnectivity, listOrgDevices, listUploadQueue, type Connectivity } from '@pb/db';
-import { Button, Card, CardContent, CardDescription, CardHeader, CardTitle } from '@pb/ui';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@pb/ui';
 import Link from 'next/link';
 import { RetryUploadButton } from '@/app/(app)/booths/[boothId]/transactions/retry-button';
 import { JOB_ERROR_TEXT } from '@/lib/upload-status';
 import { agoText, formatDateTime, nowMs } from '@/lib/format';
+import { ConfirmSubmit } from '@/components/confirm-submit';
 import { asUser, requireOrg } from '@/lib/org';
 import { revokeDeviceFromListAction } from './actions';
 import { PaperForm } from './paper-form';
@@ -39,8 +40,12 @@ export default async function DevicesPage() {
       <div>
         <h1 className="text-2xl font-semibold">Perangkat</h1>
         <p className="text-sm text-muted-foreground">
-          Perangkat dianggap <b>offline</b> bila tidak mengirim heartbeat lebih dari 5 menit. Pasang
-          perangkat baru dari halaman booth.
+          Perangkat dianggap <b>offline</b> bila tidak memberi kabar lebih dari 5 menit. Untuk
+          memasang perangkat baru, buka{' '}
+          <Link href="/booths" className="underline">
+            halaman booth
+          </Link>{' '}
+          lalu masukkan kode 6 digit yang tampil di Kiosk.
         </p>
       </div>
 
@@ -70,7 +75,7 @@ export default async function DevicesPage() {
                     </span>
                   </CardTitle>
                   <CardDescription>
-                    {d.boothName ?? 'tanpa booth'} · heartbeat terakhir{' '}
+                    {d.boothName ?? 'tanpa booth'} · terakhir memberi kabar{' '}
                     {d.lastHeartbeatAt
                       ? `${agoText(d.lastHeartbeatAt, now)} (${formatDateTime(d.lastHeartbeatAt, tz)})`
                       : 'belum pernah'}
@@ -83,11 +88,13 @@ export default async function DevicesPage() {
                       <dd>{d.appVersion ?? '—'}</dd>
                     </div>
                     <div>
-                      <dt className="text-xs text-muted-foreground">Config terpasang / aktif</dt>
+                      <dt className="text-xs text-muted-foreground">Versi desain di perangkat</dt>
                       <dd className={behind ? 'text-amber-700' : ''}>
-                        {d.lastConfigVersion ? `v${d.lastConfigVersion}` : '—'} /{' '}
-                        {d.activeConfigVersion ? `v${d.activeConfigVersion}` : '—'}
-                        {behind && ' (belum menerima versi terbaru)'}
+                        {!d.lastConfigVersion
+                          ? 'Belum menerima desain'
+                          : behind
+                            ? `v${d.lastConfigVersion} (terbaru v${d.activeConfigVersion}, belum diterima)`
+                            : `v${d.lastConfigVersion} (terbaru)`}
                       </dd>
                     </div>
                     <div>
@@ -138,14 +145,12 @@ export default async function DevicesPage() {
                       {canEdit && !d.revokedAt && (
                         <form action={revokeDeviceFromListAction}>
                           <input type="hidden" name="deviceId" value={d.id} />
-                          <Button
-                            type="submit"
-                            size="sm"
-                            variant="outline"
-                            data-testid={`revoke-${d.id}`}
-                          >
-                            Cabut token
-                          </Button>
+                          <ConfirmSubmit
+                            label="Cabut perangkat"
+                            confirmLabel="Ya, cabut"
+                            message={`Cabut "${d.name}"? Kiosk di perangkat ini langsung berhenti dan harus dipasang ulang dengan kode baru.`}
+                            testId={`revoke-${d.id}`}
+                          />
                         </form>
                       )}
                     </div>

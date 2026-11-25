@@ -105,7 +105,12 @@ export class FakeGoogle {
     const name = /name='((?:[^'\\]|\\.)*)'/.exec(qs)?.[1]?.replace(/\\(.)/g, '$1');
     if (name !== undefined && f.name !== name) return false;
     const parent = /'((?:[^'\\]|\\.)*)' in parents/.exec(qs)?.[1];
-    if (parent && !f.parents.includes(parent)) return false;
+    // 'root' is My Drive: files created without a parent live there.
+    const inParent =
+      parent === 'root'
+        ? f.parents.length === 0 || f.parents.includes('root')
+        : f.parents.includes(parent ?? '');
+    if (parent && !inParent) return false;
     if (new RegExp(`mimeType='${FOLDER_MIME}'`).test(qs) && f.mimeType !== FOLDER_MIME)
       return false;
     if (new RegExp(`mimeType!='${FOLDER_MIME}'`).test(qs) && f.mimeType === FOLDER_MIME)

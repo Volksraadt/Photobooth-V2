@@ -84,14 +84,16 @@ export function BoxStyleFields({
       <Grid2>
         <NumberField
           compact
-          label="T"
+          label="Tebal"
+          hint="Tebal garis (px)"
           value={v.borderWidth ?? 0}
           min={0}
           onCommit={(borderWidth) => set({ borderWidth: borderWidth || undefined })}
         />
         <NumberField
           compact
-          label="R"
+          label="Sudut"
+          hint="Radius sudut (px)"
           value={v.borderRadius ?? 0}
           min={0}
           onCommit={(borderRadius) => set({ borderRadius })}
@@ -156,14 +158,16 @@ export function TextStyleFields({
       <Grid2>
         <NumberField
           compact
-          label="Pt"
+          label="Ukuran"
+          hint="Ukuran huruf (px artboard)"
           value={value.fontSize}
           min={1}
           onCommit={(fontSize) => set({ fontSize })}
         />
         <NumberField
           compact
-          label="W"
+          label="Tebal"
+          hint="Ketebalan huruf (100–900)"
           value={value.fontWeight}
           min={100}
           max={900}
@@ -185,7 +189,8 @@ export function TextStyleFields({
       <Grid2>
         <NumberField
           compact
-          label="LH"
+          label="Baris"
+          hint="Tinggi baris (kelipatan ukuran huruf)"
           value={value.lineHeight}
           step={0.1}
           min={0.5}
@@ -193,7 +198,8 @@ export function TextStyleFields({
         />
         <NumberField
           compact
-          label="LS"
+          label="Huruf"
+          hint="Jarak antar huruf (px)"
           value={value.letterSpacing}
           step={0.5}
           onCommit={(letterSpacing) => set({ letterSpacing })}
@@ -245,7 +251,8 @@ export function AnimationFields({
         <Grid2>
           <NumberField
             compact
-            label="D"
+            label="Tunda"
+            hint="Tunda sebelum animasi (ms)"
             value={entrance.delayMs}
             min={0}
             step={50}
@@ -253,7 +260,8 @@ export function AnimationFields({
           />
           <NumberField
             compact
-            label="ms"
+            label="Durasi"
+            hint="Durasi animasi (ms)"
             value={entrance.durationMs}
             min={0}
             max={5000}

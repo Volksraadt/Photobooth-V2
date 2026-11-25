@@ -102,6 +102,13 @@ export default async function IntegrationsPage({
   const refunds = await asUser(user, (tx) => listRefundCandidates(tx, org.id));
   const cred = (env: 'sandbox' | 'production') =>
     state?.credentials.find((c) => c.env === env) ?? null;
+  const activeCred = state?.credentials.find((c) => c.isActive) ?? null;
+  const midtransReady =
+    state?.mode === 'mock' || (activeCred !== null && activeCred.status !== 'revoked');
+  // Midtrans cannot reach a local address; the owner must expose the API publicly.
+  const webhookIsLocal =
+    !!state?.webhookUrl &&
+    /^https?:\/\/(localhost|127\.|\[::1\]|0\.0\.0\.0)/.test(state.webhookUrl);
 
   return (
     <div className="space-y-6">
@@ -129,41 +136,71 @@ export default async function IntegrationsPage({
       {state && (
         <Card>
           <CardHeader>
-            <CardTitle className="text-base">Midtrans QRIS</CardTitle>
-            <CardDescription>Panduan singkat menghubungkan akun Midtrans:</CardDescription>
+            <CardTitle className="flex flex-wrap items-center gap-2 text-base">
+              Midtrans QRIS
+              <span
+                data-testid="midtrans-summary"
+                className={`rounded px-1.5 py-0.5 text-xs font-normal ${
+                  midtransReady ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-800'
+                }`}
+              >
+                {state.mode === 'mock'
+                  ? 'mode tiruan'
+                  : activeCred
+                    ? `${activeCred.env === 'sandbox' ? 'Sandbox' : 'Production'} aktif · ${STATUS_LABEL[activeCred.status]}`
+                    : 'Belum terhubung'}
+              </span>
+            </CardTitle>
+            <CardDescription>
+              {midtransReady
+                ? 'Pembeli bisa membayar dengan QRIS di booth.'
+                : 'QRIS di booth belum bisa dipakai. Isi key Sandbox atau Production di bawah, lalu tekan Tes koneksi.'}
+            </CardDescription>
           </CardHeader>
           <CardContent className="space-y-6">
-            <ol className="list-decimal space-y-1 pl-5 text-sm" data-testid="midtrans-guide">
-              <li>
-                Daftar / masuk ke dashboard Midtrans (dashboard.midtrans.com). Untuk mencoba, pilih
-                lingkungan <b>Sandbox</b> di pojok kiri atas.
-              </li>
-              <li>
-                Buka <b>Settings → Access Keys</b>, salin Merchant ID, Client Key, Server Key, dan
-                Signature Secret Key ke formulir di bawah (Sandbox dan Production punya key
-                berbeda). Server Key hanya ditampilkan sekali saat dibuat.
-              </li>
-              <li>
-                Pastikan metode pembayaran <b>QRIS</b> aktif untuk akun Anda (Settings → Payment
-                methods). Untuk Production, QRIS perlu diaktifkan setelah verifikasi bisnis.
-              </li>
-              <li>
-                Di <b>Settings → Payment → Notification URL</b> isikan URL berikut agar status lunas
-                langsung sampai ke booth:
-                <code
-                  className="mt-1 block break-all rounded bg-muted px-2 py-1 text-xs"
-                  data-testid="webhook-url"
-                >
-                  {state.webhookUrl ?? 'Belum diatur: setel PB_PUBLIC_API_URL di server API.'}
-                </code>
-                API juga mengirim URL ini per transaksi, dan booth tetap mengecek status secara
-                berkala bila notifikasi terlambat.
-              </li>
-              <li>
-                Simpan, lalu tekan <b>Tes koneksi</b>. Untuk sandbox, bayar QR dengan simulator QRIS
-                Midtrans.
-              </li>
-            </ol>
+            <details open={!activeCred} className="group text-sm">
+              <summary className="cursor-pointer font-medium">
+                Panduan menghubungkan akun Midtrans
+              </summary>
+              <ol className="mt-2 list-decimal space-y-1 pl-5 text-sm" data-testid="midtrans-guide">
+                <li>
+                  Daftar / masuk ke dashboard Midtrans (dashboard.midtrans.com). Untuk mencoba,
+                  pilih lingkungan <b>Sandbox</b> di pojok kiri atas.
+                </li>
+                <li>
+                  Buka <b>Settings → Access Keys</b>, salin Merchant ID, Client Key, Server Key, dan
+                  Signature Secret Key ke formulir di bawah (Sandbox dan Production punya key
+                  berbeda). Server Key hanya ditampilkan sekali saat dibuat.
+                </li>
+                <li>
+                  Pastikan metode pembayaran <b>QRIS</b> aktif untuk akun Anda (Settings → Payment
+                  methods). Untuk Production, QRIS perlu diaktifkan setelah verifikasi bisnis.
+                </li>
+                <li>
+                  Di <b>Settings → Payment → Notification URL</b> isikan URL berikut agar status
+                  lunas langsung sampai ke booth:
+                  <code
+                    className="mt-1 block break-all rounded bg-muted px-2 py-1 text-xs"
+                    data-testid="webhook-url"
+                  >
+                    {state.webhookUrl ?? 'Belum diatur: setel PB_PUBLIC_API_URL di server API.'}
+                  </code>
+                  {webhookIsLocal && (
+                    <span className="mt-1 block text-amber-700" data-testid="webhook-local">
+                      Alamat ini hanya bisa dibuka dari komputer ini, jadi Midtrans tidak bisa
+                      mengirim notifikasi ke sana. Setel PB_PUBLIC_API_URL ke alamat publik (mis.
+                      domain API atau tunnel). Status lunas tetap terbaca lewat pengecekan berkala.
+                    </span>
+                  )}
+                  API juga mengirim URL ini per transaksi, dan booth tetap mengecek status secara
+                  berkala bila notifikasi terlambat.
+                </li>
+                <li>
+                  Simpan, lalu tekan <b>Tes koneksi</b>. Untuk sandbox, bayar QR dengan simulator
+                  QRIS Midtrans.
+                </li>
+              </ol>
+            </details>
 
             {(['sandbox', 'production'] as const).map((env) => {
               const c = cred(env);
@@ -178,15 +215,14 @@ export default async function IntegrationsPage({
                         </span>
                       )}
                     </h2>
-                    {c && (
-                      <span
-                        className="text-xs text-muted-foreground"
-                        data-testid={`midtrans-status-${env}`}
-                      >
-                        Status: {STATUS_LABEL[c.status]}
-                        {c.lastTestMessage ? ` — ${c.lastTestMessage}` : ''}
-                      </span>
-                    )}
+                    <span
+                      className="text-xs text-muted-foreground"
+                      data-testid={c ? `midtrans-status-${env}` : undefined}
+                    >
+                      {c
+                        ? `Status: ${STATUS_LABEL[c.status]}${c.lastTestMessage ? ` — ${c.lastTestMessage}` : ''}`
+                        : 'Belum diisi'}
+                    </span>
                   </div>
                   <MidtransForm env={env} credential={c} />
                   {c && <TestConnectionButton env={env} />}

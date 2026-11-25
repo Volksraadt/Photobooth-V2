@@ -5,13 +5,14 @@ import {
   listRefundCandidates,
   listUnsyncedDevices,
 } from '@pb/db';
-import { Alert, Button, Card, CardContent, CardDescription, CardHeader, CardTitle } from '@pb/ui';
+import { Alert, Card, CardContent, CardDescription, CardHeader, CardTitle } from '@pb/ui';
 import Link from 'next/link';
 import { BarChart } from '@/components/bar-chart';
+import { RangeFilter } from '@/components/range-filter';
 import { getEntitlements, hasFeature, recapDays } from '@/lib/entitlements';
 import { formatDateTime, formatDay, formatShortDay, idr, METHOD_LABEL } from '@/lib/format';
 import { asUser, requireOrg } from '@/lib/org';
-import { addDays, resolveRange, todayIn } from '@/lib/range';
+import { resolveRange, todayIn } from '@/lib/range';
 
 type SP = { from?: string; to?: string; booth?: string; device?: string };
 
@@ -43,8 +44,6 @@ export default async function ReportsPage({ searchParams }: { searchParams: Prom
   const query = new URLSearchParams({ from: range.from, to: range.to });
   if (boothId) query.set('booth', boothId);
   if (deviceId) query.set('device', deviceId);
-  const preset = (days: number) =>
-    `/reports?${new URLSearchParams({ from: addDays(today, -(days - 1)), to: today, ...(boothId ? { booth: boothId } : {}) })}`;
   const refundsShown = refunds.filter((r) => !boothId || r.boothId === boothId);
   const dayStep = Math.max(1, Math.ceil(report.days.length / 10));
 
@@ -58,19 +57,40 @@ export default async function ReportsPage({ searchParams }: { searchParams: Prom
             tiap booth
           </p>
         </div>
-        <div className="flex flex-wrap gap-2 text-sm">
-          <Link className="rounded border px-2 py-1 hover:bg-muted" href={preset(1)}>
-            Hari ini
+        <div className="flex flex-wrap items-center gap-2 text-sm">
+          <Link
+            className="rounded border px-3 py-1.5 hover:bg-muted"
+            href={`/transactions?${query}`}
+          >
+            Lihat daftar transaksi →
           </Link>
-          <Link className="rounded border px-2 py-1 hover:bg-muted" href={preset(7)}>
-            7 hari
-          </Link>
-          <Link className="rounded border px-2 py-1 hover:bg-muted" href={preset(30)}>
-            30 hari
-          </Link>
-          <Link className="rounded border px-2 py-1 hover:bg-muted" href="/transactions">
-            Daftar transaksi
-          </Link>
+          {canExport ? (
+            <>
+              <a
+                className="rounded border px-3 py-1.5 hover:bg-muted"
+                href={`/api/export/transactions?${query}&format=csv`}
+                data-testid="export-csv"
+                title="Daftar transaksi pada rentang dan filter ini (waktu mengikuti zona booth)"
+              >
+                Unduh CSV
+              </a>
+              <a
+                className="rounded border px-3 py-1.5 hover:bg-muted"
+                href={`/api/export/transactions?${query}&format=xlsx`}
+                data-testid="export-xlsx"
+                title="Daftar transaksi pada rentang dan filter ini (waktu mengikuti zona booth)"
+              >
+                Unduh Excel
+              </a>
+            </>
+          ) : (
+            <span className="text-xs text-muted-foreground" data-testid="export-locked">
+              Ekspor CSV/Excel di paket Pro dan Business.{' '}
+              <Link href="/billing" className="underline">
+                Lihat paket
+              </Link>
+            </span>
+          )}
         </div>
       </div>
 
@@ -91,63 +111,17 @@ export default async function ReportsPage({ searchParams }: { searchParams: Prom
         </Alert>
       )}
 
-      <form
-        className="flex flex-wrap items-end gap-3 rounded border bg-background p-3 text-sm"
-        data-testid="report-filter"
-      >
-        <label className="space-y-1">
-          <span className="block text-xs text-muted-foreground">Dari</span>
-          <input
-            type="date"
-            name="from"
-            defaultValue={range.from}
-            max={today}
-            className="h-9 rounded-md border bg-background px-2"
-          />
-        </label>
-        <label className="space-y-1">
-          <span className="block text-xs text-muted-foreground">Sampai</span>
-          <input
-            type="date"
-            name="to"
-            defaultValue={range.to}
-            max={today}
-            className="h-9 rounded-md border bg-background px-2"
-          />
-        </label>
-        <label className="space-y-1">
-          <span className="block text-xs text-muted-foreground">Booth</span>
-          <select
-            name="booth"
-            defaultValue={boothId ?? ''}
-            className="h-9 rounded-md border bg-background px-2"
-          >
-            <option value="">Semua booth</option>
-            {boothList.map((b) => (
-              <option key={b.id} value={b.id}>
-                {b.name}
-              </option>
-            ))}
-          </select>
-        </label>
-        <label className="space-y-1">
-          <span className="block text-xs text-muted-foreground">Perangkat</span>
-          <select
-            name="device"
-            defaultValue={deviceId ?? ''}
-            className="h-9 rounded-md border bg-background px-2"
-          >
-            <option value="">Semua perangkat</option>
-            {deviceList.map((d) => (
-              <option key={d.id} value={d.id}>
-                {d.name}
-                {d.boothName ? ` · ${d.boothName}` : ''}
-              </option>
-            ))}
-          </select>
-        </label>
-        <Button type="submit">Terapkan</Button>
-      </form>
+      <RangeFilter
+        basePath="/reports"
+        testId="report-filter"
+        from={range.from}
+        to={range.to}
+        today={today}
+        booths={boothList.map((b) => ({ id: b.id, name: b.name }))}
+        devices={deviceList.map((d) => ({ id: d.id, name: d.name, boothName: d.boothName }))}
+        boothId={boothId}
+        deviceId={deviceId}
+      />
 
       <div className="grid gap-3 sm:grid-cols-3 lg:grid-cols-6" data-testid="report-cards">
         {[
@@ -199,9 +173,10 @@ export default async function ReportsPage({ searchParams }: { searchParams: Prom
             <BarChart
               testId="chart-hours"
               money={false}
+              unit="sesi"
               showEvery={3}
               data={report.hours.map((h) => ({
-                label: String(h.hour).padStart(2, '0'),
+                label: `${String(h.hour).padStart(2, '0')}.00`,
                 value: h.sessions,
                 sub: idr(h.gross),
               }))}
@@ -333,42 +308,6 @@ export default async function ReportsPage({ searchParams }: { searchParams: Prom
                 </li>
               ))}
             </ul>
-          )}
-        </CardContent>
-      </Card>
-
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-base">Ekspor</CardTitle>
-          <CardDescription>
-            Daftar transaksi pada rentang dan filter di atas (waktu mengikuti zona booth).
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="flex flex-wrap items-center gap-3 text-sm">
-          {canExport ? (
-            <>
-              <a
-                className="rounded border px-3 py-1.5 hover:bg-muted"
-                href={`/api/export/transactions?${query}&format=csv`}
-                data-testid="export-csv"
-              >
-                Unduh CSV
-              </a>
-              <a
-                className="rounded border px-3 py-1.5 hover:bg-muted"
-                href={`/api/export/transactions?${query}&format=xlsx`}
-                data-testid="export-xlsx"
-              >
-                Unduh Excel (.xlsx)
-              </a>
-            </>
-          ) : (
-            <span className="text-muted-foreground" data-testid="export-locked">
-              Ekspor CSV/Excel tersedia di paket Pro dan Business.{' '}
-              <Link href="/billing" className="underline">
-                Lihat paket
-              </Link>
-            </span>
           )}
         </CardContent>
       </Card>

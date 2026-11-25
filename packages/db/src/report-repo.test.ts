@@ -3,6 +3,7 @@ import { eq, sql } from 'drizzle-orm';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import {
   addDays,
+  describeAuditEntities,
   getReport,
   listTransactions,
   localDate,
@@ -383,5 +384,27 @@ describe('isolation and listing', () => {
       deviceName: 'Laptop WIB',
     });
     expect(addDays('2026-11-30', 1)).toBe('2026-12-01');
+  });
+
+  it('labels audit objects by name, only inside the org', async () => {
+    const [s1] = await db.select().from(sessions).where(eq(sessions.code, 'AAAAAAA2'));
+    const refs = [
+      { entity: 'booth', entityId: wib },
+      { entity: 'session', entityId: s1!.id },
+      { entity: 'device', entityId: deviceWib },
+      { entity: 'booth', entityId: 'missing' },
+    ];
+    const mine = await withUserContext(db, userId, (tx) => describeAuditEntities(tx, orgId, refs));
+    expect(mine.get(`session:${s1!.id}`)).toEqual({
+      label: 'Sesi AAAAAAA2',
+      href: `/transactions/${s1!.id}`,
+    });
+    expect(mine.get(`device:${deviceWib}`)?.label).toBe('Perangkat Laptop WIB');
+    expect(mine.get(`booth:${wib}`)?.href).toBe(`/booths/${wib}`);
+    expect(mine.has('booth:missing')).toBe(false);
+    const other = await withUserContext(db, otherUserId, (tx) =>
+      describeAuditEntities(tx, orgId, refs),
+    );
+    expect(other.size).toBe(0);
   });
 });

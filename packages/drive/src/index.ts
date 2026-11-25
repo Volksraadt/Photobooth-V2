@@ -254,10 +254,13 @@ export class DriveClient {
     return j.user?.emailAddress ?? '';
   }
 
-  /** Folders this app created (drive.file never lists anything else). */
+  /**
+   * Top-level folders (directly in My Drive) this app created; drive.file never lists anything
+   * else. Only these are sensible root folders: booth, date and session folders live below them.
+   */
   async listAppFolders(): Promise<DriveFolder[]> {
     const params = new URLSearchParams({
-      q: `mimeType='${FOLDER_MIME}' and trashed=false`,
+      q: `mimeType='${FOLDER_MIME}' and trashed=false and 'root' in parents`,
       fields: 'files(id,name)',
       orderBy: 'name',
       pageSize: '100',

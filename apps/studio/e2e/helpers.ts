@@ -58,6 +58,10 @@ export async function pairKiosk(context: BrowserContext, studio: Page, boothUrl:
 export async function publish(page: Page): Promise<number> {
   await page.getByTestId('publish-button').click();
   const ok = page.getByTestId('publish-ok');
+  // Warnings (e.g. QRIS without Midtrans) are confirmed before publishing.
+  const confirm = page.getByTestId('publish-confirm-go');
+  await expect(ok.or(confirm)).toBeVisible({ timeout: 20_000 });
+  if (await confirm.isVisible()) await confirm.click();
   await expect(ok).toBeVisible({ timeout: 20_000 });
   const version = Number(/Versi (\d+)/.exec((await ok.textContent()) ?? '')?.[1]);
   await page.getByRole('button', { name: 'Tutup' }).click();

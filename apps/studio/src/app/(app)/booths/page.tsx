@@ -12,16 +12,17 @@ import type { BoothConfig } from '@pb/schema';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@pb/ui';
 import Link from 'next/link';
 import { OrgOverview, type OverviewData } from '@/components/org-overview';
-import { nowMs } from '@/lib/format';
+import { idr, nowMs } from '@/lib/format';
 import { asUser, requireOrg } from '@/lib/org';
 import { addDays, todayIn } from '@/lib/range';
+import { timezoneLabel } from '@/lib/timezones';
 import { CreateBoothForm } from './create-booth-form';
 
 export default async function BoothsPage() {
   const { user, org } = await requireOrg();
   const now = nowMs();
   const today = todayIn(org.timezone, new Date(now));
-  const { booths, templates, plan, overview } = await asUser(user, async (tx) => {
+  const { booths, templates, plan, overview, perBooth } = await asUser(user, async (tx) => {
     const [booths, templates, plan, todayReport, weekReport, devices, queue, refunds] =
       await Promise.all([
         listBooths(tx, org.id),
@@ -56,7 +57,23 @@ export default async function BoothsPage() {
       refunds: refunds.length,
       now,
     };
-    return { booths, templates, plan, overview };
+    // Per-booth line on the list: today's sales and devices online.
+    const perBooth = new Map<
+      string,
+      { gross: number; sessions: number; online: number; total: number }
+    >();
+    for (const b of booths) perBooth.set(b.id, { gross: 0, sessions: 0, online: 0, total: 0 });
+    for (const r of todayReport.booths) {
+      const p = perBooth.get(r.boothId);
+      if (p) Object.assign(p, { gross: r.gross, sessions: r.sessions });
+    }
+    for (const d of overview.devices) {
+      const p = perBooth.get(devices.find((x) => x.id === d.id)?.boothId ?? '');
+      if (!p || d.connectivity === 'revoked') continue;
+      p.total += 1;
+      if (d.connectivity === 'online') p.online += 1;
+    }
+    return { booths, templates, plan, overview, perBooth };
   });
   const maxBooths = plan?.limits.maxBooths ?? null;
   const atLimit = maxBooths !== null && booths.length >= maxBooths;
@@ -79,22 +96,37 @@ export default async function BoothsPage() {
         </p>
       ) : (
         <ul className="divide-y rounded-lg border bg-background" data-testid="booth-list">
-          {booths.map((b) => (
-            <li key={b.id}>
-              <Link
-                href={`/booths/${b.id}`}
-                className="flex items-center justify-between p-4 hover:bg-muted/50"
-              >
-                <div>
-                  <div className="font-medium">{b.name}</div>
-                  <div className="text-xs text-muted-foreground">{b.timezone}</div>
-                </div>
-                <span className="text-xs text-muted-foreground">
-                  {b.activeConfigId ? 'Sudah dipublikasikan' : 'Draft'}
-                </span>
-              </Link>
-            </li>
-          ))}
+          {booths.map((b) => {
+            const p = perBooth.get(b.id);
+            return (
+              <li key={b.id}>
+                <Link
+                  href={`/booths/${b.id}`}
+                  className="flex flex-wrap items-center justify-between gap-x-4 gap-y-1 p-4 hover:bg-muted/50"
+                >
+                  <div className="min-w-0">
+                    <div className="font-medium">{b.name}</div>
+                    <div className="text-xs text-muted-foreground">
+                      {timezoneLabel(b.timezone)} ·{' '}
+                      {b.activeConfigId ? 'Sudah dipublikasikan' : 'Draft (belum dipublikasikan)'}
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-4 text-xs text-muted-foreground">
+                    <span>
+                      Hari ini: <b className="text-foreground">{idr(p?.gross ?? 0)}</b> ·{' '}
+                      {p?.sessions ?? 0} sesi
+                    </span>
+                    <span className={p && p.online > 0 ? 'text-emerald-700' : ''}>
+                      {p?.total ? `${p.online}/${p.total} perangkat online` : 'Belum ada perangkat'}
+                    </span>
+                    <span aria-hidden className="text-base">
+                      ›
+                    </span>
+                  </div>
+                </Link>
+              </li>
+            );
+          })}
         </ul>
       )}
 

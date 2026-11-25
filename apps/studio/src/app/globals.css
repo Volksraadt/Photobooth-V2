@@ -2,3 +2,8 @@
 @import '@pb/ui/theme.css';
 
 @source '../../../../packages/ui/src';
+
+/* Keep the page width stable when moving between short and long pages (scrollbar appears). */
+html {
+  scrollbar-gutter: stable;
+}
