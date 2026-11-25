@@ -43,7 +43,7 @@ Paket **Hobby hanya untuk pemakaian non-komersial**. Uji coba sendiri boleh; beg
    - agent: `PB_API_URL=https://<api>.vercel.app`, `PB_SHORT_LINK_BASE=https://<api>.vercel.app`
    - kiosk: `VITE_SHORT_LINK_BASE=https://<api>.vercel.app`
    - worker: `PB_PUBLIC_API_URL=https://<api>.vercel.app` lalu `pnpm --filter @pb/worker start` (memakai `DATABASE_URL` session pooler seperti dev).
-   - Atau cukup `pnpm booth` (scripts/booth.mjs): menyetel semua variabel di atas ke `PB_BOOTH_API_URL` (default API Vercel) dan menjalankan agent + Kiosk + worker saja.
+   - Atau cukup `pnpm booth` (scripts/booth.mjs): menyetel semua variabel di atas ke `PB_BOOTH_API_URL` (default API Vercel) dan menjalankan agent + Kiosk + worker saja. Matikan dengan Ctrl+C di terminalnya, atau `pnpm booth:stop` dari terminal mana pun (juga membersihkan proses yang tertinggal).
 
 ## Cek setelah deploy
 - `https://<api>.vercel.app/s/XXXXXXXX` → 404 (halaman "tidak ditemukan"), `…/studio/me` → 401.

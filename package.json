@@ -19,7 +19,8 @@
     "db:migrate": "pnpm --filter @pb/db db:migrate",
     "db:seed": "pnpm --filter @pb/db db:seed",
     "dev:camera": "pnpm --filter @pb/camera dev",
-    "booth": "node scripts/booth.mjs"
+    "booth": "node scripts/booth.mjs",
+    "booth:stop": "node scripts/booth-stop.mjs"
   },
   "devDependencies": {
     "@eslint/js": "^9.39.0",
