@@ -16,7 +16,17 @@ export type RendererAction =
   | { kind: 'voucherSubmit' };
 
 export type VoucherRuntimeStatus =
-  'idle' | 'checking' | 'invalid' | 'used' | 'expired' | 'insufficient' | 'error';
+  | 'idle'
+  | 'checking'
+  | 'invalid'
+  | 'used'
+  | 'expired'
+  | 'insufficient'
+  /** Offline, and the owner did not allow offline vouchers for this booth. */
+  | 'needs_online'
+  /** Too many wrong codes on this device; try again later. */
+  | 'locked'
+  | 'error';
 
 export type RuntimePhoto = { url: string };
 

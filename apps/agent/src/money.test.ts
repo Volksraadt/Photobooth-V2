@@ -14,6 +14,7 @@ import {
 } from '@pb/crypto';
 import {
   BoothConfigEvents,
+  booths,
   cashApprovals,
   createBoothFromTemplate,
   createOrg,
@@ -35,8 +36,8 @@ import { Agent } from './agent';
 import { DEFAULT_ORIGINS } from './options';
 
 const SECRET = 'test-secret-'.padEnd(48, 'x');
-const CODE_A = '1111222233334444';
-const CODE_B = '4444555566667777';
+const CODE_A = '11112222';
+const CODE_B = '44445555';
 
 let db: Db;
 let closeDb: () => Promise<void>;
@@ -167,6 +168,8 @@ beforeAll(async () => {
   );
   config = { ...withPin, configVersion: 1 };
 
+  // These tests use vouchers while offline: the owner allows it for this booth.
+  await db.update(booths).set({ voucherOffline: true }).where(eq(booths.id, boothId));
   await insertVouchers(db, {
     orgId,
     boothId,
@@ -262,7 +265,7 @@ describe('offline: vouchers + cash, synced when back online', () => {
 
   it('accepts a valid voucher once; the same voucher is refused the second time', async () => {
     const first = await json<{ result: string; offline: boolean }>(
-      post('/vouchers/redeem', { code: '1111-2222-3333-4444', session: s1, amount: price() }),
+      post('/vouchers/redeem', { code: '1111-2222', session: s1, amount: price() }),
     );
     expect(first).toEqual({ result: 'ok', offline: true });
     const again = await json<{ result: string }>(
@@ -270,9 +273,21 @@ describe('offline: vouchers + cash, synced when back online', () => {
     );
     expect(again.result).toBe('used');
     const bogus = await json<{ result: string }>(
-      post('/vouchers/redeem', { code: '9999888877776666', session: s2, amount: price() }),
+      post('/vouchers/redeem', { code: '99998888', session: s2, amount: price() }),
     );
     expect(bogus.result).toBe('invalid');
+  });
+
+  it('refuses vouchers offline when the owner did not allow it for the booth', async () => {
+    agent.store.setMeta('voucher.offlineAllowed', '0');
+    try {
+      const r = await json<{ result: string; offline: boolean }>(
+        post('/vouchers/redeem', { code: CODE_B, session: s2, amount: price() }),
+      );
+      expect(r).toEqual({ result: 'needs_online', offline: true });
+    } finally {
+      agent.store.setMeta('voucher.offlineAllowed', '1');
+    }
   });
 
   it('approves cash with the booth PIN (wrong PIN refused)', async () => {
@@ -379,7 +394,7 @@ describe('offline: vouchers + cash, synced when back online', () => {
       offline: true,
     });
     const [v] = await db.select().from(vouchers).where(eq(vouchers.usedSessionId, s1.id));
-    expect(v).toMatchObject({ usedOffline: true, codeLast4: '4444' });
+    expect(v).toMatchObject({ usedOffline: true, codeLast4: '2222' });
     const cash = await db.select().from(cashApprovals).where(eq(cashApprovals.sessionId, s3.id));
     expect(cash).toHaveLength(1);
     expect(agent.store.outboxCount()).toBe(0);

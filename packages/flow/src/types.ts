@@ -79,13 +79,23 @@ export const DEFAULT_FLOW_TIMINGS: FlowTimings = {
 };
 
 export type VoucherStatus =
-  'idle' | 'checking' | 'invalid' | 'used' | 'expired' | 'insufficient' | 'error';
+  | 'idle'
+  | 'checking'
+  | 'invalid'
+  | 'used'
+  | 'expired'
+  | 'insufficient'
+  /** Offline, and the owner did not allow offline vouchers for this booth. */
+  | 'needs_online'
+  /** Too many wrong codes on this device; try again later. */
+  | 'locked'
+  | 'error';
 
 /** Voucher being typed on the Payment page (digits only). */
 export type VoucherState = { code: string; status: VoucherStatus };
 
 /** Same as `VOUCHER_CODE_DIGITS` in @pb/crypto (the flow stays free of Node crypto). */
-export const VOUCHER_CODE_LENGTH = 16;
+export const VOUCHER_CODE_LENGTH = 8;
 
 export type FlowContext = {
   config: BoothConfig;

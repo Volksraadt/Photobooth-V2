@@ -295,17 +295,8 @@ function checkSemantics(config: BoothConfig): ValidationIssue[] {
           `Tombol "${el.name}" memilih filter yang tidak ada.`,
         );
       }
-      if (
-        el.type === 'button' &&
-        el.action.kind === 'selectPayment' &&
-        !methods.has(el.action.method)
-      ) {
-        add(
-          'button.payment-method-disabled',
-          `${path}.action.method`,
-          `Tombol "${el.name}" memilih metode ${el.action.method} yang tidak aktif.`,
-        );
-      }
+      // A selectPayment button for a method that is switched off is not an error: the kiosk
+      // hides it (owners toggle methods from the booth page without editing the design).
       if (
         el.type === 'button' &&
         el.action.kind === 'retake' &&

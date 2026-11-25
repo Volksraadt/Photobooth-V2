@@ -347,3 +347,14 @@ describe('asset references', () => {
     ).toEqual(['builtin-strip-overlay-4', 'font1']);
   });
 });
+
+describe('payment methods switched off from the booth page', () => {
+  it('stays valid when a method keeps its button on the Payment page (the kiosk hides it)', () => {
+    const c = fresh();
+    c.flow.paymentMethods = ['cash'];
+    expect(issuesOf(c)).toEqual([]);
+    c.flow.paymentMethods = [];
+    c.flow.eventMode = true;
+    expect(issuesOf(c)).toEqual([]);
+  });
+});

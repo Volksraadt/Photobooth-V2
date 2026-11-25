@@ -1,11 +1,20 @@
 'use server';
 
-import { getConfigVersion, PlanLimitError, publishConfig, revokeDevice, saveDraft } from '@pb/db';
-import { validateBoothConfig } from '@pb/schema';
+import {
+  getBooth,
+  getConfigVersion,
+  listConfigVersions,
+  PlanLimitError,
+  publishConfig,
+  revokeDevice,
+  saveDraft,
+} from '@pb/db';
+import { validateBoothConfig, type BoothConfig } from '@pb/schema';
 import { revalidatePath } from 'next/cache';
 import { apiFetch } from '@/lib/api';
 import { field, type FormState } from '@/lib/form';
 import { asUser, requireOrg } from '@/lib/org';
+import { qrisSetupWarning } from '@/lib/qris-warning';
 
 async function editor() {
   const ctx = await requireOrg();
@@ -86,4 +95,83 @@ export async function revokeDeviceAction(form: FormData): Promise<void> {
   const boothId = field(form, 'boothId');
   await asUser(user, (tx) => revokeDevice(tx, field(form, 'deviceId'), user.id));
   revalidatePath(`/booths/${boothId}`);
+}
+
+const METHODS = ['qris', 'voucher', 'cash'] as const;
+
+/**
+ * Payment options from the booth page (no editor needed). Applied to the live version (published
+ * as a new version so the kiosk picks it up) and to the draft, without publishing other unfinished
+ * design changes of the draft. A booth that was never published only gets the draft change.
+ */
+export async function savePaymentAction(_prev: FormState, form: FormData): Promise<FormState> {
+  const { user, org } = await editor();
+  const boothId = field(form, 'boothId');
+  const eventMode = field(form, 'eventMode') === 'on';
+  const methods = METHODS.filter((m) => form.get(`method-${m}`) === 'on');
+  if (!eventMode && methods.length === 0)
+    return {
+      status: 'error',
+      message: 'Pilih minimal satu cara bayar, atau aktifkan mode event (tanpa pembayaran).',
+    };
+  const apply = <T extends BoothConfig>(c: T): T => ({
+    ...c,
+    flow: {
+      ...c.flow,
+      eventMode,
+      paymentMethods: methods.length ? [...methods] : c.flow.paymentMethods,
+    },
+  });
+
+  try {
+    const result = await asUser(user, async (tx) => {
+      const row = await getBooth(tx, boothId);
+      if (!row?.draft) throw new Error('Booth tidak ditemukan.');
+      let published: number | null = null;
+      let liveConfig: BoothConfig | null = null;
+      if (row.booth.activeConfigId) {
+        const versions = await listConfigVersions(tx, boothId);
+        const active = versions.find((v) => v.id === row.booth.activeConfigId);
+        const live = active ? await getConfigVersion(tx, boothId, active.version) : null;
+        if (live) {
+          const next = validateBoothConfig(apply(live.config as BoothConfig));
+          if (!next.success) throw new Error(issueText(next.issues));
+          const p = await publishConfig(tx, { boothId, config: next.config, userId: user.id });
+          published = p.version;
+          liveConfig = next.config;
+        }
+      }
+      // The draft keeps its own design edits; only the payment fields change.
+      const draft = apply(row.draft.config as BoothConfig);
+      if (published === null) {
+        const check = validateBoothConfig(draft);
+        if (!check.success) throw new Error(issueText(check.issues));
+      }
+      await saveDraft(tx, {
+        boothId,
+        config: published === null ? draft : { ...draft, configVersion: published },
+        userId: user.id,
+      });
+      return { published, config: liveConfig ?? draft };
+    });
+    revalidatePath(`/booths/${boothId}`);
+    const warning = await qrisSetupWarning(org.id, result.config);
+    const base =
+      result.published !== null
+        ? `Pembayaran disimpan dan aktif di booth (versi ${result.published}).`
+        : 'Pembayaran disimpan di draft. Booth belum pernah dipublikasikan: publish dari editor agar berlaku.';
+    return { status: warning ? 'warning' : 'info', message: warning ? `${base} ${warning}` : base };
+  } catch (err) {
+    if (err instanceof PlanLimitError) {
+      return { status: 'error', message: `Paket ${err.planName} dibatasi ${err.max} frame.` };
+    }
+    return { status: 'error', message: err instanceof Error ? err.message : 'Gagal menyimpan.' };
+  }
+}
+
+function issueText(issues: { message: string }[]): string {
+  return `Belum bisa disimpan: ${issues
+    .slice(0, 3)
+    .map((i) => i.message)
+    .join(' ')} Tambahkan elemen yang dibutuhkan di editor (halaman Pembayaran).`;
 }

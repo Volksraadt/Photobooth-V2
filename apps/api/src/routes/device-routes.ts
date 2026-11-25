@@ -21,8 +21,8 @@ import { streamSSE } from 'hono/streaming';
 import { z } from 'zod';
 import { deviceAuth } from '../middleware/device-auth';
 import { deviceOutputRoutes } from './output-routes';
-import { devicePaymentRoutes } from './payment-routes';
-import type { AppEnv } from '../types';
+import { countVoucherMiss, devicePaymentRoutes, voucherBlockedFor } from './payment-routes';
+import type { AppEnv, ResolvedDeps } from '../types';
 
 /**
  * The plan flags a booth device needs (nothing about money): what the Kiosk/agent may offer.
@@ -151,7 +151,12 @@ type Outbox = z.infer<typeof OutboxBody>;
  * booth, …) is recorded as a `sync_conflict` device event and acknowledged, so it is not retried
  * forever; unexpected errors are not acknowledged (the agent retries with backoff).
  */
-async function applyMoneyOutbox(db: Db, device: DeviceRef, body: Outbox): Promise<string[]> {
+async function applyMoneyOutbox(
+  deps: ResolvedDeps,
+  device: DeviceRef,
+  body: Outbox,
+): Promise<string[]> {
+  const { db } = deps;
   const accepted: string[] = [];
   const run = async (id: string, label: string, fn: () => Promise<unknown>) => {
     try {
@@ -179,7 +184,16 @@ async function applyMoneyOutbox(db: Db, device: DeviceRef, body: Outbox): Promis
     }
   };
   // Money first (it sets the payment method), then the session record.
-  for (const v of body.voucherUses) await run(v.id, 'voucher', () => redeemVoucher(db, device, v));
+  for (const v of body.voucherUses)
+    await run(v.id, 'voucher', async () => {
+      // Same wrong-code limit as online redeems: the outbox must not become a guessing channel.
+      // A plain Error is not acknowledged, so real offline usages are retried later, never lost.
+      if (voucherBlockedFor(deps, device.id) > 0)
+        throw new Error('voucher attempts limited for this device; retry later');
+      const r = await redeemVoucher(db, device, v);
+      countVoucherMiss(deps, device.id, r.result);
+      return r;
+    });
   for (const a of body.cashApprovals)
     await run(a.id, 'cash', () => recordCashApproval(db, device, a));
   for (const s of body.sessions)
@@ -332,7 +346,7 @@ export function deviceRoutes() {
     const body = OutboxBody.safeParse(await c.req.json().catch(() => null));
     if (!body.success) return c.json({ error: 'invalid_body', issues: body.error.issues }, 400);
     const accepted = await recordDeviceOutbox(c.var.deps.db, c.var.device, body.data);
-    accepted.push(...(await applyMoneyOutbox(c.var.deps.db, c.var.device, body.data)));
+    accepted.push(...(await applyMoneyOutbox(c.var.deps, c.var.device, body.data)));
     return c.json({ accepted });
   });
 

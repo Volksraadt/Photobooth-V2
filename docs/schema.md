@@ -294,7 +294,7 @@ Semua tabel bisnis punya `org_id`, `created_at`, `updated_at`. ID memakai `cuid2
 ### B.2 Booth, device, config
 | Tabel | Kolom utama |
 |---|---|
-| `booths` | org_id, name, timezone, active_config_id, status |
+| `booths` | org_id, name, timezone, active_config_id, status, voucher_offline |
 | `booth_configs` | booth_id, version, config (jsonb `BoothConfig`), published_by, published_at |
 | `booth_drafts` | booth_id, config (jsonb), updated_by — draft editor sebelum publish |
 | `devices` | org_id, booth_id, name, token_hash, platform, app_version, last_heartbeat_at, last_config_version, camera_status, printer_status, revoked_at |
@@ -309,7 +309,7 @@ Semua tabel bisnis punya `org_id`, `created_at`, `updated_at`. ID memakai `cuid2
 | `session_shots` | session_id, slot_index, take_number, storage_path, width, height, selected (bool) |
 | `session_outputs` | session_id, kind (`original` \| `mirrored` \| `filtered` \| `composite` \| `gif` \| `video` \| `clip`), storage_path, drive_file_id, status |
 | `payments` | org_id, session_id, provider, order_id (unik), amount, status (`pending` \| `paid` \| `expired` \| `canceled` \| `failed` \| `paid_late`), qr_string, expires_at, paid_at, provider_ref, fee_amount, raw (jsonb) |
-| `vouchers` | org_id, booth_id, code_hash, code_last4, value_type (`full` \| `amount`), value, expires_at, used_at, used_session_id, used_device_id |
+| `vouchers` | org_id, booth_id, code_hash, code_last4, code_encrypted, value_type (`full` \| `amount`), value, expires_at, used_at, used_session_id, used_device_id |
 | `cash_approvals` | session_id, approved_by_pin_of (member id), amount |
 
 ### B.4 Integrasi
@@ -423,7 +423,7 @@ File `agent.sqlite` di folder data agent (Windows `%APPDATA%\photobooth-agent`, 
 - Kode voucher tidak pernah disimpan di agent; hanya hash (lihat B.9).
 
 ### A.7 Ketetapan F4 (renderer, tanpa perubahan schema)
-- `voucher-input` varian `keypad`: baris tampilan kode/status + keypad 3×4. Varian `field`: kolom setinggi `min(height, fontSize × 2,4)`; bila sisa tinggi kotak ≥ 1,2 × tinggi kolom, keypad ringkas 6×2 digambar di sisa kotak (editor dan kiosk sama). Keduanya menerima keyboard/scanner di mode live. Kode ditampilkan `1234-5678-9012-3456` (16 digit sejak audit S4).
+- `voucher-input` varian `keypad`: baris tampilan kode/status + keypad 3×4. Varian `field`: kolom setinggi `min(height, fontSize × 2,4)`; sisa tinggi kotak berisi keypad 3×4 ala telepon (1-2-3 / 4-5-6 / 7-8-9 / ⌫-0-✓; sejak 2026-11-25, sebelumnya 6×2), rata kiri, lebar tombol maks. 2,4 × tingginya, ukuran angka mengecil bila kotak pendek; tanpa keypad bila tinggi baris < 20 px (editor dan kiosk sama). Keduanya menerima keyboard/scanner di mode live. Kode ditampilkan `1234-5678` (8 digit sejak 2026-11-25). Bila kotak lebar dan pendek, keypad diletakkan di samping kolom (`data-pb-voucher-keypad="3x4-side"`). Status baru `needs_online` ("Voucher butuh internet") dan `locked` ("Terlalu banyak percobaan"). Di mode live, `voucher-input` dan tombol `selectPayment` untuk metode yang tidak aktif tidak digambar; di editor tampil redup.
 - `qris` dan `payment-timer` tidak digambar di mode live bila `runtime.qrisHidden` (device offline atau QRIS tidak aktif).
 
 ### C.3 Ketetapan F5 (SQLite `user_version` 3)
@@ -435,3 +435,11 @@ File `agent.sqlite` di folder data agent (Windows `%APPDATA%\photobooth-agent`, 
 - Yang diunggah: foto `selected = 1` (`original`) + `composite`. Take yang di-retake dan lembar cetak (`print`) tidak diunggah, dihapus bersama sesi.
 - File lokal dan baris metadata tidak dihapus sebelum `POST /device/sessions/:id/complete` sukses. Dengan `PB_LOCAL_RETENTION_DAYS = N > 0`, penghapusan menunggu `uploaded_at + N hari`. Baris `local_sessions`/`local_files` dipertahankan (riwayat); hanya file di disk yang dihapus.
 - Backoff unggah: 10 dtk × 2ⁿ, maks. 10 menit; kembali online mengosongkan backoff. 401 (perangkat dicabut) menghentikan antrian sampai pairing ulang.
+
+### B.13 Voucher 8 digit (migrasi `0007_voucher_8_digit.sql`, 2026-11-25)
+- `booths.voucher_offline` (boolean, default `false`): owner mengizinkan voucher saat booth offline. Hanya bila `true` `GET /device/vouchers` mengirim daftar hash (hanya voucher belum terpakai dan belum kedaluwarsa); bila `false` balasan `{ offlineAllowed: false, vouchers: [] }` dan agent mengosongkan daftarnya. Diubah lewat API Studio `PUT /studio/orgs/:orgId/booths/:boothId/voucher-offline` (audit `booth.voucher_offline`).
+- `vouchers.code_hash` = hex scrypt(kode 8 digit, salt `pb-voucher:v2:<boothId>`, N=2^14, r=8, p=1, 32 byte) — `hashVoucherCode()` di `@pb/crypto`. Hash v1 (PBKDF2, 16 digit) tidak cocok lagi.
+- `vouchers.code_encrypted` = SecretBox kode lengkap, AAD `voucher:<boothId>`; dibuat dan dibuka hanya oleh API (`POST …/vouchers`, `GET …/vouchers/codes`, audit `voucher.reveal`). `null` = voucher lama (kode tidak tersimpan). Agent tetap hanya menerima hash.
+- Migrasi menandai voucher lama yang belum terpakai sebagai kedaluwarsa (`expires_at = now()`); tidak ada yang dihapus.
+- API membatasi kode salah per device: 10 per 10 menit (redeem online → 429 `too_many_attempts` + `retryAfterSec`; `voucherUses` dari outbox ditunda, tidak dibuang). Agent: hasil `locked` dan `needs_online`; meta SQLite `voucher.offlineAllowed`.
+

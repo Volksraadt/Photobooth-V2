@@ -113,7 +113,7 @@ export function VideoElementView({ el }: { el: ElementOf<'video'> }) {
 }
 
 export function ButtonElementView({ el }: { el: ElementOf<'button'> }) {
-  const { mode, onAction, resolveAsset, runtime } = useRenderer();
+  const { mode, onAction, resolveAsset, runtime, config } = useRenderer();
   const enabled = useActionEnabled(el.action);
   const [pressed, setPressed] = useState(false);
   const live = mode === 'live';
@@ -123,7 +123,11 @@ export function ButtonElementView({ el }: { el: ElementOf<'button'> }) {
   const box = pressed && el.pressedStyle ? el.pressedStyle : el.style;
   const src = el.assetId ? resolveAsset(el.assetId) : undefined;
   const release = () => setPressed(false);
-  if (qrisUnavailable) return null;
+  // A payment method the owner switched off (e.g. from the booth page): hidden on the kiosk,
+  // dimmed in the editor so the design can stay as it is.
+  const methodOff =
+    el.action.kind === 'selectPayment' && !config.flow.paymentMethods.includes(el.action.method);
+  if (qrisUnavailable || (live && methodOff)) return null;
   return (
     <button
       type="button"
@@ -143,7 +147,7 @@ export function ButtonElementView({ el }: { el: ElementOf<'button'> }) {
         justifyContent: 'center',
         overflow: 'hidden',
         cursor: live && enabled ? 'pointer' : 'default',
-        opacity: enabled ? 1 : 0.4,
+        opacity: methodOff ? 0.35 : enabled ? 1 : 0.4,
         transform: pressed && !el.pressedStyle ? 'scale(0.97)' : undefined,
         ...boxStyleToCss(box),
         ...textStyleToCss(el.textStyle),

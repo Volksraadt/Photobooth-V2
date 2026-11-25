@@ -6,6 +6,7 @@
   "description": "Hono API: device endpoints, webhooks, short links",
   "dependencies": {
     "@hono/node-server": "^2.1.11",
+    "@paralleldrive/cuid2": "^3.3.0",
     "@pb/crypto": "workspace:*",
     "@pb/db": "workspace:*",
     "@pb/drive": "workspace:*",
@@ -26,8 +27,5 @@
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "lint": "eslint src",
     "test": "vitest run"
-  },
-  "devDependencies": {
-    "@paralleldrive/cuid2": "^3.3.0"
   }
 }

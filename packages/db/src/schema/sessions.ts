@@ -191,6 +191,8 @@ export const vouchers = pgTable(
       .references(() => booths.id, { onDelete: 'cascade' }),
     codeHash: text('code_hash').notNull(),
     codeLast4: text('code_last4').notNull(),
+    /** Full code encrypted by the API (SecretBox, AAD voucher:<boothId>) so the owner can see it again. */
+    codeEncrypted: text('code_encrypted'),
     valueType: voucherValueType('value_type').notNull(),
     /** IDR; ignored when valueType = full. */
     value: integer('value').notNull().default(0),

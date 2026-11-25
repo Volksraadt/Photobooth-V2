@@ -22,7 +22,7 @@ function downloadCsv(name: string, state: Extract<VoucherFormState, { status: 'c
   URL.revokeObjectURL(url);
 }
 
-/** Printable cards in a new window (the codes are not kept anywhere after this page). */
+/** Printable cards in a new window. */
 function printCards(boothName: string, state: Extract<VoucherFormState, { status: 'created' }>) {
   const w = window.open('', '_blank', 'width=900,height=700');
   if (!w) return;
@@ -95,7 +95,7 @@ export function VoucherForm({ boothId, boothName }: { boothId: string; boothName
         </div>
         <p className="text-xs text-muted-foreground">
           Voucher nominal hanya diterima bila nilainya ≥ harga frame yang dipilih. Setiap voucher
-          sekali pakai dan hanya berlaku di booth ini, juga saat booth offline.
+          sekali pakai dan hanya berlaku di booth ini.
         </p>
         <Button type="submit" disabled={pending}>
           {pending ? 'Membuat…' : 'Buat voucher'}

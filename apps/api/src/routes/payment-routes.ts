@@ -42,6 +42,24 @@ const RedeemBody = z.object({
   offline: z.boolean().default(false),
 });
 
+/**
+ * Wrong voucher codes per device: 10 per 10 minutes. 8-digit codes are guessable by a device
+ * token holder without this (decisions 2026-11-25, "Voucher 8 digit"). Applies to online redeems
+ * and to offline usages synced from the outbox. Valid codes never count.
+ */
+export const VOUCHER_MISS_MAX = 10;
+export const VOUCHER_MISS_WINDOW_MS = 10 * 60_000;
+const missKey = (deviceId: string) => `voucher-miss:${deviceId}`;
+
+export function voucherBlockedFor(deps: ResolvedDeps, deviceId: string): number {
+  return deps.rateLimiter.blockedFor(missKey(deviceId), VOUCHER_MISS_MAX);
+}
+
+export function countVoucherMiss(deps: ResolvedDeps, deviceId: string, result: string) {
+  if (result === 'invalid')
+    deps.rateLimiter.take(missKey(deviceId), VOUCHER_MISS_MAX, VOUCHER_MISS_WINDOW_MS);
+}
+
 /** Only these fields ever leave the API towards a device. */
 export function devicePaymentView(p: PaymentRow) {
   return {
@@ -228,12 +246,16 @@ export function devicePaymentRoutes() {
     return c.json(devicePaymentView(current));
   });
 
-  /** Voucher hashes of the device's booth, for offline validation. */
+  /**
+   * Voucher hashes of the device's booth for offline validation: only when the owner allows
+   * offline vouchers (otherwise an empty list, and the device clears its copy).
+   */
   app.get('/vouchers', async (c) => {
     const { deps, device } = c.var;
-    const rows = await listBoothVouchersForDevice(deps.db, device);
+    const { offlineAllowed, vouchers: rows } = await listBoothVouchersForDevice(deps.db, device);
     c.header('Cache-Control', 'no-store');
     return c.json({
+      offlineAllowed,
       vouchers: rows.map((v) => ({
         codeHash: v.codeHash,
         valueType: v.valueType,
@@ -247,8 +269,22 @@ export function devicePaymentRoutes() {
   app.post('/vouchers/redeem', async (c) => {
     const body = RedeemBody.safeParse(await c.req.json().catch(() => null));
     if (!body.success) return c.json({ error: 'invalid_body', issues: body.error.issues }, 400);
+    const { deps, device } = c.var;
+    const wait = voucherBlockedFor(deps, device.id);
+    if (wait > 0) {
+      c.header('Retry-After', String(wait));
+      return c.json(
+        {
+          error: 'too_many_attempts',
+          message: 'Terlalu banyak kode voucher salah.',
+          retryAfterSec: wait,
+        },
+        429,
+      );
+    }
     try {
-      const result = await redeemVoucher(c.var.deps.db, c.var.device, body.data);
+      const result = await redeemVoucher(deps.db, device, body.data);
+      countVoucherMiss(deps, device.id, result.result);
       return c.json(result);
     } catch (err) {
       return repoError(c, err);

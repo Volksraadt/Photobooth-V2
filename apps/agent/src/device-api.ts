@@ -75,6 +75,8 @@ export class DeviceApiError extends Error {
   }
   /** File ids the API says are not stored (`missing_files`). */
   missing: string[] = [];
+  /** 429: seconds until the API accepts the call again. */
+  retryAfterSec: number | null = null;
 }
 
 /**
@@ -267,13 +269,15 @@ export class DeviceApi {
       timeoutMs,
     });
     const json = (await res.json().catch(() => null)) as
-      (T & { message?: string; error?: string }) | null;
+      (T & { message?: string; error?: string; retryAfterSec?: number }) | null;
     if (!res.ok) {
-      throw new DeviceApiError(
+      const err = new DeviceApiError(
         res.status,
         json?.message ?? json?.error ?? `HTTP ${res.status}`,
         json?.error,
       );
+      if (typeof json?.retryAfterSec === 'number') err.retryAfterSec = json.retryAfterSec;
+      throw err;
     }
     return json as T;
   }
@@ -307,8 +311,13 @@ export class DeviceApi {
     );
   }
 
-  async vouchers(): Promise<RemoteVoucher[]> {
-    return (await this.jsonCall<{ vouchers: RemoteVoucher[] }>('GET', '/device/vouchers')).vouchers;
+  /** Hash list for offline redeems; empty unless the owner allows offline vouchers. */
+  async vouchers(): Promise<{ offlineAllowed: boolean; vouchers: RemoteVoucher[] }> {
+    const r = await this.jsonCall<{ offlineAllowed?: boolean; vouchers: RemoteVoucher[] }>(
+      'GET',
+      '/device/vouchers',
+    );
+    return { offlineAllowed: r.offlineAllowed === true, vouchers: r.vouchers };
   }
 
   redeemVoucher(

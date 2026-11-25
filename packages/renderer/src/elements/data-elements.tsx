@@ -140,6 +140,8 @@ const VOUCHER_MESSAGES: Record<
   used: { id: 'Voucher sudah dipakai', en: 'Voucher already used' },
   expired: { id: 'Voucher kedaluwarsa', en: 'Voucher expired' },
   insufficient: { id: 'Nilai voucher kurang', en: 'Voucher value too low' },
+  needs_online: { id: 'Voucher butuh internet', en: 'Voucher needs internet' },
+  locked: { id: 'Terlalu banyak percobaan, tunggu sebentar', en: 'Too many tries, please wait' },
   error: { id: 'Coba lagi', en: 'Try again' },
 };
 const ERROR_COLOR = '#ef4444';
@@ -154,12 +156,7 @@ const KEYS: VoucherKey[] = [
   { label: '✓', action: { kind: 'voucherSubmit' } },
 ];
 
-const byLabel = (l: string) => KEYS.find((k) => k.label === l)!;
-const COMPACT_KEYS: VoucherKey[] = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '0', '⌫', '✓'].map(
-  byLabel,
-);
-
-/** 1234123412341234 → 1234-1234-1234-1234 (as printed on the voucher). */
+/** 12345678 → 1234-5678 (as printed on the voucher). */
 const groupCode = (code: string) => code.replace(/(\d{4})(?=\d)/g, '$1-');
 
 /**
@@ -170,9 +167,11 @@ export function VoucherInputElementView({ el }: { el: ElementOf<'voucher-input'>
   const { runtime, config, mode, onAction } = useRenderer();
   const live = mode === 'live';
   const text = textStyleToCss(el.textStyle);
+  // Voucher switched off by the owner: hidden on the kiosk, dimmed in the editor.
+  const voucherOff = !config.flow.paymentMethods.includes('voucher');
 
   useEffect(() => {
-    if (!live) return;
+    if (!live || voucherOff) return;
     const onKey = (e: KeyboardEvent) => {
       if (/^\d$/.test(e.key)) onAction({ kind: 'voucherKey', key: e.key });
       else if (e.key === 'Backspace') onAction({ kind: 'voucherBackspace' });
@@ -182,7 +181,9 @@ export function VoucherInputElementView({ el }: { el: ElementOf<'voucher-input'>
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [live, onAction]);
+  }, [live, voucherOff, onAction]);
+  if (live && voucherOff) return null;
+  const dim = voucherOff ? { opacity: 0.35 } : {};
 
   const code = runtime.voucherCode ?? '';
   const status = runtime.voucherStatus ?? 'idle';
@@ -212,7 +213,7 @@ export function VoucherInputElementView({ el }: { el: ElementOf<'voucher-input'>
     ...(isError ? { boxShadow: `inset 0 0 0 3px ${ERROR_COLOR}` } : {}),
   } as const;
 
-  const keyView = (k: VoucherKey) => (
+  const keyView = (k: VoucherKey, fontSize?: number) => (
     <div
       key={k.label}
       role={live ? 'button' : undefined}
@@ -236,6 +237,7 @@ export function VoucherInputElementView({ el }: { el: ElementOf<'voucher-input'>
         touchAction: 'manipulation',
         ...boxStyleToCss(el.keyStyle),
         ...text,
+        ...(fontSize ? { fontSize } : {}),
       }}
     >
       {k.label}
@@ -244,39 +246,53 @@ export function VoucherInputElementView({ el }: { el: ElementOf<'voucher-input'>
 
   if (el.variant === 'field') {
     const fieldHeight = Math.min(el.height, el.textStyle.fontSize * 2.4);
-    // Touch screens need keys: the space left in the element box holds a 6×2 keypad
-    // (same in the editor and on the kiosk). A field-only box = keyboard / barcode scanner.
-    const keypadHeight = el.height - fieldHeight - 8;
-    const compact = keypadHeight >= fieldHeight * 1.2;
+    // Touch screens need keys: the element box holds a phone-style 3×4 keypad (same in the editor
+    // and on the kiosk). Below the field when the box is tall enough; beside it when the box is
+    // wide and short (bigger keys than squeezing 4 rows under the field). Keys are never wider
+    // than 2.4× their height; digits shrink to fit. Too small = keyboard / barcode scanner only.
+    const GAP = 8;
+    const stackedRow = (el.height - fieldHeight - GAP - GAP * 3) / 4;
+    const sideRow = (el.height - GAP * 3) / 4;
+    const sideKeypadWidth = Math.min(sideRow * 2.4 * 3 + GAP * 2, el.width * 0.55);
+    const side = sideRow > stackedRow * 1.15 && el.width - sideKeypadWidth - GAP >= fieldHeight * 3;
+    const rowHeight = side ? sideRow : stackedRow;
+    const hasKeypad = rowHeight >= 20;
+    const keypadWidth = side ? sideKeypadWidth : Math.min(el.width, rowHeight * 2.4 * 3 + GAP * 2);
+    const keypadHeight = rowHeight * 4 + GAP * 3;
+    const keyFont = Math.min(el.textStyle.fontSize, rowHeight * 0.6);
     return (
-      <div data-pb-voucher data-status={status} style={{ ...fill, ...boxStyleToCss(el.style) }}>
+      <div
+        data-pb-voucher
+        data-status={status}
+        style={{ ...fill, ...boxStyleToCss(el.style), ...dim }}
+      >
         <div
           style={{
             ...fieldStyle,
             position: 'absolute',
             left: 0,
-            right: 0,
+            right: hasKeypad && side ? keypadWidth + GAP : 0,
             top: 0,
             height: fieldHeight,
           }}
         >
           {display}
         </div>
-        {compact && (
+        {hasKeypad && (
           <div
+            data-pb-voucher-keypad={side ? '3x4-side' : '3x4'}
             style={{
               position: 'absolute',
-              left: 0,
-              right: 0,
-              bottom: 0,
+              ...(side ? { right: 0, top: 0 } : { left: 0, bottom: 0 }),
+              width: keypadWidth,
               height: keypadHeight,
               display: 'grid',
-              gridTemplateColumns: 'repeat(6, 1fr)',
-              gridTemplateRows: 'repeat(2, 1fr)',
-              gap: 8,
+              gridTemplateColumns: 'repeat(3, 1fr)',
+              gridTemplateRows: 'repeat(4, 1fr)',
+              gap: GAP,
             }}
           >
-            {COMPACT_KEYS.map(keyView)}
+            {KEYS.map((k) => keyView(k, keyFont))}
           </div>
         )}
       </div>
@@ -293,10 +309,11 @@ export function VoucherInputElementView({ el }: { el: ElementOf<'voucher-input'>
         gridTemplateRows: 'repeat(5, 1fr)',
         gap: 8,
         ...boxStyleToCss(el.style),
+        ...dim,
       }}
     >
       <div style={{ ...fieldStyle, gridColumn: '1 / -1', justifyContent: 'center' }}>{display}</div>
-      {KEYS.map(keyView)}
+      {KEYS.map((k) => keyView(k))}
     </div>
   );
 }

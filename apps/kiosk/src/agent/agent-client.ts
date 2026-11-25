@@ -352,11 +352,10 @@ export class AgentClient implements AgentLink {
   cancelPayment = (id: string) =>
     this.json<{ status: string }>('POST', `/payments/${encodeURIComponent(id)}/cancel`, {});
   redeemVoucher = (body: { code: string; session: AgentSessionRef; amount: number }) =>
-    this.json<{ result: 'ok' | 'invalid' | 'used' | 'expired' | 'insufficient'; offline: boolean }>(
-      'POST',
-      '/vouchers/redeem',
-      body,
-    );
+    this.json<{
+      result: 'ok' | 'invalid' | 'used' | 'expired' | 'insufficient' | 'needs_online' | 'locked';
+      offline: boolean;
+    }>('POST', '/vouchers/redeem', body);
   approveCash = (body: { pin: string; session: AgentSessionRef; amount: number }) =>
     this.json<{ id: string; offline: boolean }>('POST', '/cash-approvals', body);
   syncVouchers = () => this.json<{ ok: true }>('POST', '/vouchers/sync', {});

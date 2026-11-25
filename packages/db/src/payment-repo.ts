@@ -1,8 +1,9 @@
 import type { BoothConfig } from '@pb/schema';
-import { and, desc, eq, lt, lte, ne, or, sql } from 'drizzle-orm';
+import { and, desc, eq, gt, inArray, isNull, lt, lte, ne, or, sql } from 'drizzle-orm';
 import {
   auditLogs,
   boothConfigs,
+  booths,
   cashApprovals,
   deviceEvents,
   feeSettings,
@@ -526,9 +527,33 @@ export type VoucherRedeemResult =
   | { result: 'invalid' | 'expired' | 'insufficient' }
   | { result: 'used'; usedSessionCode: string | null };
 
-export async function listBoothVouchersForDevice(db: Db, device: DeviceRef) {
-  if (!device.boothId) return [];
-  return db
+/**
+ * Voucher hashes for offline validation on the device. Only when the owner allows offline
+ * vouchers for the booth, and only vouchers that can still be redeemed (unused, not expired):
+ * 8-digit codes make a copied list guessable, so it is kept as short as possible. Otherwise the
+ * list is empty and the device clears what it had.
+ */
+export async function listBoothVouchersForDevice(
+  db: Db,
+  device: DeviceRef,
+  now: Date = new Date(),
+): Promise<{
+  offlineAllowed: boolean;
+  vouchers: {
+    codeHash: string;
+    valueType: 'full' | 'amount';
+    value: number;
+    expiresAt: Date | null;
+    usedAt: Date | null;
+  }[];
+}> {
+  if (!device.boothId) return { offlineAllowed: false, vouchers: [] };
+  const [booth] = await db
+    .select({ voucherOffline: booths.voucherOffline })
+    .from(booths)
+    .where(and(eq(booths.id, device.boothId), eq(booths.orgId, device.orgId)));
+  if (!booth?.voucherOffline) return { offlineAllowed: false, vouchers: [] };
+  const rows = await db
     .select({
       codeHash: vouchers.codeHash,
       valueType: vouchers.valueType,
@@ -537,7 +562,15 @@ export async function listBoothVouchersForDevice(db: Db, device: DeviceRef) {
       usedAt: vouchers.usedAt,
     })
     .from(vouchers)
-    .where(and(eq(vouchers.orgId, device.orgId), eq(vouchers.boothId, device.boothId)));
+    .where(
+      and(
+        eq(vouchers.orgId, device.orgId),
+        eq(vouchers.boothId, device.boothId),
+        isNull(vouchers.usedAt),
+        or(isNull(vouchers.expiresAt), gt(vouchers.expiresAt, now)),
+      ),
+    );
+  return { offlineAllowed: true, vouchers: rows };
 }
 
 /**
@@ -794,6 +827,8 @@ export async function listBoothVouchers(db: DbOrTx, boothId: string, limit = 500
       note: vouchers.note,
       createdAt: vouchers.createdAt,
       usedSessionCode: sessions.code,
+      /** The code can be shown again (created since the 8-digit change; stored encrypted). */
+      revealable: sql<boolean>`${vouchers.codeEncrypted} is not null`,
     })
     .from(vouchers)
     .leftJoin(sessions, eq(sessions.id, vouchers.usedSessionId))
@@ -812,7 +847,8 @@ export async function insertVouchers(
     valueType: 'full' | 'amount';
     value: number;
     expiresAt: Date | null;
-    codes: { codeHash: string; last4: string }[];
+    /** `codeEncrypted`: SecretBox ciphertext of the code (API only), so it can be shown again. */
+    codes: { codeHash: string; last4: string; codeEncrypted?: string | null }[];
     userId: string;
   },
 ) {
@@ -822,6 +858,7 @@ export async function insertVouchers(
       boothId: input.boothId,
       codeHash: c.codeHash,
       codeLast4: c.last4,
+      codeEncrypted: c.codeEncrypted ?? null,
       valueType: input.valueType,
       value: input.valueType === 'full' ? 0 : input.value,
       expiresAt: input.expiresAt,
@@ -842,5 +879,51 @@ export async function insertVouchers(
       value: input.value,
       expiresAt: input.expiresAt?.toISOString() ?? null,
     },
+  });
+}
+
+/**
+ * Encrypted codes of a booth's vouchers for the owner (the API decrypts them). Runs with the
+ * user's RLS context; `voucherIds` limits the result (null = every voucher of the booth).
+ */
+export async function listEncryptedVoucherCodes(
+  db: DbOrTx,
+  input: { boothId: string; voucherIds: string[] | null },
+) {
+  return db
+    .select({
+      id: vouchers.id,
+      orgId: vouchers.orgId,
+      boothId: vouchers.boothId,
+      codeEncrypted: vouchers.codeEncrypted,
+      codeLast4: vouchers.codeLast4,
+    })
+    .from(vouchers)
+    .where(
+      and(
+        eq(vouchers.boothId, input.boothId),
+        input.voucherIds ? inArray(vouchers.id, input.voucherIds) : undefined,
+      ),
+    );
+}
+
+/** Owner switch: may this booth accept vouchers while offline (device keeps the hash list)? */
+export async function setBoothVoucherOffline(
+  db: DbOrTx,
+  input: { boothId: string; enabled: boolean; userId: string },
+) {
+  const [row] = await db
+    .update(booths)
+    .set({ voucherOffline: input.enabled, updatedAt: new Date() })
+    .where(eq(booths.id, input.boothId))
+    .returning({ id: booths.id, orgId: booths.orgId });
+  if (!row) throw new PaymentRepoError('not_found', 'Booth tidak ditemukan');
+  await db.insert(auditLogs).values({
+    orgId: row.orgId,
+    actorId: input.userId,
+    action: 'booth.voucher_offline',
+    entity: 'booth',
+    entityId: row.id,
+    after: { enabled: input.enabled },
   });
 }

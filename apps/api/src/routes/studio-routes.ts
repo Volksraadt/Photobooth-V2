@@ -18,6 +18,7 @@ import { z } from 'zod';
 import { requireOrgEditor } from '../middleware/org-access';
 import { studioBillingRoutes } from './billing-routes';
 import { studioDriveCompleteRoutes, studioDriveRoutes } from './drive-routes';
+import { studioVoucherRoutes } from './voucher-routes';
 import { userAuth } from '../middleware/user-auth';
 import { decryptCredential, encryptCredential, mergeStoredSecret } from '../payments/gateway';
 import type { AppEnv } from '../types';
@@ -36,6 +37,7 @@ export function studioRoutes() {
   app.route('/', studioDriveRoutes());
   app.route('/', studioDriveCompleteRoutes());
   app.route('/', studioBillingRoutes());
+  app.route('/', studioVoucherRoutes());
 
   app.get('/me', async (c) => {
     const user = c.var.user;

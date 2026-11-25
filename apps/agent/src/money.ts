@@ -1,5 +1,5 @@
 import { createId } from '@paralleldrive/cuid2';
-import { hashVoucherCode, normalizeVoucherCode } from '@pb/crypto';
+import { hashVoucherCodeAsync, normalizeVoucherCode } from '@pb/crypto';
 import { verifyAdminPin } from '@pb/schema';
 import type { ConfigSync } from './config-sync';
 import {
@@ -31,12 +31,20 @@ export class MoneyError extends Error {
   }
 }
 
-export type VoucherOutcome = RedeemResult & { offline: boolean };
+/**
+ * `needs_online`: offline and the owner did not allow offline vouchers for this booth.
+ * `locked`: the API refuses more attempts for a while (too many wrong codes).
+ */
+export type VoucherOutcome = (
+  RedeemResult | { result: 'needs_online' } | { result: 'locked'; retryAfterSec: number }
+) & { offline: boolean };
 
 const VOUCHER_SYNC_MS = 60_000;
 const PIN_MAX_FAILURES = 5;
 const PIN_LOCK_MS = 60_000;
 const PIN_STATE_KEY = 'cash.pinState';
+/** Last answer of the API: may this booth redeem vouchers offline? Default no (safe). */
+const VOUCHER_OFFLINE_KEY = 'voucher.offlineAllowed';
 
 const isNetworkError = isApiUnreachable;
 
@@ -199,8 +207,9 @@ export class MoneyService {
       const boothId = this.boothId();
       if (!boothId || !this.api.hasToken) return;
       try {
-        const list = await this.online(() => this.api.vouchers());
-        this.store.replaceVouchers(boothId, list);
+        const { offlineAllowed, vouchers } = await this.online(() => this.api.vouchers());
+        this.store.replaceVouchers(boothId, vouchers);
+        this.store.setMeta(VOUCHER_OFFLINE_KEY, offlineAllowed ? '1' : '0');
       } catch {
         // keep the last list (offline)
       }
@@ -219,7 +228,7 @@ export class MoneyService {
     const boothId = this.boothId();
     if (!code || !boothId || boothId !== input.session.boothId)
       return { result: 'invalid', offline: false };
-    const codeHash = hashVoucherCode(boothId, code);
+    const codeHash = await hashVoucherCodeAsync(boothId, code);
     this.store.ensureSession(input.session);
     const usedAt = new Date().toISOString();
     const session = {
@@ -246,11 +255,16 @@ export class MoneyService {
         }
         return { ...r, offline: false };
       } catch (err) {
+        if (err instanceof DeviceApiError && err.status === 429) {
+          return { result: 'locked', retryAfterSec: err.retryAfterSec ?? 60, offline: false };
+        }
         // Unreachable / server error: fall back to the local list.
         if (err instanceof DeviceApiError && err.status < 500) throw err;
       }
     }
 
+    if (this.store.getMeta(VOUCHER_OFFLINE_KEY) !== '1')
+      return { result: 'needs_online', offline: true };
     const v = this.store.voucher(boothId, codeHash);
     if (!v) return { result: 'invalid', offline: true };
     if (v.remote_used_at || (v.used_at && v.used_session_id !== session.id)) {

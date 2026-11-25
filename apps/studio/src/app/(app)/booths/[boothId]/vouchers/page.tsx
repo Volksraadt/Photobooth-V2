@@ -5,6 +5,7 @@ import { notFound } from 'next/navigation';
 import { formatInZone } from '@/lib/timezones';
 import { asUser, requireOrg } from '@/lib/org';
 import { VoucherForm } from './voucher-form';
+import { VoucherList, VoucherOfflineToggle, type VoucherRowView } from './voucher-list';
 
 const nowMs = () => Date.now();
 
@@ -19,7 +20,30 @@ export default async function VouchersPage({ params }: { params: Promise<{ booth
   if (!data) notFound();
   const { booth, vouchers, now } = data;
   const tz = booth.timezone;
-  const used = vouchers.filter((v) => v.usedAt).length;
+  const canEdit = org.role !== 'operator';
+  const rows: VoucherRowView[] = vouchers.map((v) => {
+    const expired = !v.usedAt && !!v.expiresAt && v.expiresAt.getTime() < now;
+    return {
+      id: v.id,
+      last4: v.codeLast4,
+      valueLabel:
+        v.valueType === 'full' ? 'Penuh (gratis 1 sesi)' : `Rp${v.value.toLocaleString('id-ID')}`,
+      expiresLabel: v.expiresAt
+        ? `berlaku s.d. ${formatInZone(v.expiresAt, tz)}`
+        : 'tanpa batas waktu',
+      status: v.usedAt ? 'used' : expired ? 'expired' : 'available',
+      statusLabel: v.usedAt
+        ? `Terpakai sesi ${v.usedSessionCode ?? '?'} · ${formatInZone(v.usedAt, tz)}`
+        : expired
+          ? 'Kedaluwarsa'
+          : 'Tersedia',
+      usedOffline: v.usedOffline,
+      note: v.note ?? '',
+      revealable: v.revealable,
+    };
+  });
+  const used = rows.filter((r) => r.status === 'used').length;
+  const available = rows.filter((r) => r.status === 'available').length;
 
   return (
     <div className="space-y-6">
@@ -29,17 +53,16 @@ export default async function VouchersPage({ params }: { params: Promise<{ booth
         </Link>
         <h1 className="mt-2 text-2xl font-semibold">Voucher</h1>
         <p className="text-sm text-muted-foreground">
-          {vouchers.length} voucher · {used} terpakai · {vouchers.length - used} tersedia
+          {rows.length} voucher · {used} terpakai · {available} tersedia
         </p>
       </div>
 
-      {org.role !== 'operator' && (
+      {canEdit && (
         <Card>
           <CardHeader>
             <CardTitle className="text-base">Buat voucher</CardTitle>
             <CardDescription>
-              Kode 16 digit dimasukkan pembeli di halaman Pembayaran. Daftar voucher otomatis
-              tersinkron ke perangkat booth.
+              Kode 8 digit (dicetak 1234-5678) dimasukkan pembeli di halaman Pembayaran.
             </CardDescription>
           </CardHeader>
           <CardContent>
@@ -50,55 +73,31 @@ export default async function VouchersPage({ params }: { params: Promise<{ booth
 
       <Card>
         <CardHeader>
+          <CardTitle className="text-base">Saat booth offline</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <VoucherOfflineToggle
+            boothId={boothId}
+            enabled={booth.voucherOffline}
+            canEdit={canEdit}
+          />
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
           <CardTitle className="text-base">Daftar voucher</CardTitle>
           <CardDescription>
-            Kode lengkap hanya ditampilkan saat dibuat; di sini hanya 4 digit terakhir.
+            {canEdit
+              ? 'Kode disamarkan; tekan Tampilkan untuk melihat dan menyalinnya kapan saja.'
+              : 'Hanya owner/manager yang dapat melihat kode lengkap.'}
           </CardDescription>
         </CardHeader>
         <CardContent>
-          {vouchers.length === 0 ? (
+          {rows.length === 0 ? (
             <p className="text-sm text-muted-foreground">Belum ada voucher.</p>
           ) : (
-            <table className="data-table w-full text-sm" data-testid="voucher-list">
-              <thead className="text-left text-muted-foreground">
-                <tr>
-                  <th className="py-1">Kode</th>
-                  <th>Nilai</th>
-                  <th>Berlaku</th>
-                  <th>Status</th>
-                  <th>Catatan</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y">
-                {vouchers.map((v) => (
-                  <tr key={v.id} data-testid={`voucher-${v.codeLast4}`}>
-                    <td className="whitespace-nowrap py-1 font-mono">····-····-{v.codeLast4}</td>
-                    <td>
-                      {v.valueType === 'full' ? 'Penuh' : `Rp${v.value.toLocaleString('id-ID')}`}
-                    </td>
-                    <td>{v.expiresAt ? formatInZone(v.expiresAt, tz) : '—'}</td>
-                    <td>
-                      {v.usedAt ? (
-                        <span>
-                          Terpakai sesi <b>{v.usedSessionCode ?? '?'}</b> ·{' '}
-                          {formatInZone(v.usedAt, tz)}
-                          {v.usedOffline && (
-                            <span className="ml-1 rounded bg-amber-100 px-1 text-xs text-amber-800">
-                              offline
-                            </span>
-                          )}
-                        </span>
-                      ) : v.expiresAt && v.expiresAt.getTime() < now ? (
-                        <span className="text-muted-foreground">kedaluwarsa</span>
-                      ) : (
-                        <span className="text-emerald-700">tersedia</span>
-                      )}
-                    </td>
-                    <td className="text-muted-foreground">{v.note ?? ''}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+            <VoucherList boothId={boothId} boothName={booth.name} rows={rows} canReveal={canEdit} />
           )}
         </CardContent>
       </Card>

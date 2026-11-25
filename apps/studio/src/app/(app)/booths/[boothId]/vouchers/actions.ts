@@ -1,9 +1,8 @@
 'use server';
 
-import { createId } from '@paralleldrive/cuid2';
-import { formatVoucherCode, generateVoucherCode, hashVoucherCodeAsync } from '@pb/crypto';
-import { getBooth, insertVouchers } from '@pb/db';
+import { getBooth } from '@pb/db';
 import { revalidatePath } from 'next/cache';
+import { apiFetch } from '@/lib/api';
 import { field } from '@/lib/form';
 import { asUser, requireOrg } from '@/lib/org';
 import { endOfDayInZone } from '@/lib/timezones';
@@ -24,9 +23,14 @@ export type VoucherFormState =
 
 const MAX_BATCH = 500;
 
+async function apiError(res: Response, fallback: string): Promise<string> {
+  const body = (await res.json().catch(() => null)) as { message?: string } | null;
+  return body?.message ?? fallback;
+}
+
 /**
- * Creates single or batch vouchers for one booth. Codes are generated here, shown once to the
- * owner (CSV / print) and stored only as PBKDF2 hashes (the booth validates them offline).
+ * Creates single or batch vouchers for one booth. The API generates the codes, stores them hashed
+ * (lookup) and encrypted (so they can be shown again here), and returns them once for CSV/print.
  */
 export async function createVouchersAction(
   _prev: VoucherFormState,
@@ -50,47 +54,75 @@ export async function createVouchersAction(
   }
 
   try {
-    const result = await asUser(user, async (tx) => {
-      const booth = await getBooth(tx, boothId);
-      if (!booth) throw new Error('Booth tidak ditemukan.');
-      const tz = booth.booth.timezone;
-      let expiresAt: Date | null = null;
-      if (expiresOn) {
-        if (!/^\d{4}-\d{2}-\d{2}$/.test(expiresOn)) throw new Error('Tanggal berlaku tidak valid.');
-        expiresAt = endOfDayInZone(expiresOn, tz);
-        if (expiresAt.getTime() < Date.now()) throw new Error('Tanggal berlaku sudah lewat.');
-      }
-      const unique = new Set<string>();
-      while (unique.size < count) unique.add(generateVoucherCode());
-      const codes = [...unique];
-      const hashes = await Promise.all(codes.map((c) => hashVoucherCodeAsync(boothId, c)));
-      const batchId = createId();
-      await insertVouchers(tx, {
-        orgId: booth.booth.orgId,
-        boothId,
-        batchId,
-        note,
-        valueType,
-        value: valueType === 'amount' ? value : 0,
-        expiresAt,
-        codes: codes.map((c, i) => ({ codeHash: hashes[i]!, last4: c.slice(-4) })),
-        userId: user.id,
-      });
-      return { batchId, codes, expiresOn: expiresOn || null };
+    const booth = await asUser(user, (tx) => getBooth(tx, boothId));
+    if (!booth) return { status: 'error', message: 'Booth tidak ditemukan.' };
+    let expiresAt: string | null = null;
+    if (expiresOn) {
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(expiresOn))
+        return { status: 'error', message: 'Tanggal berlaku tidak valid.' };
+      expiresAt = endOfDayInZone(expiresOn, booth.booth.timezone).toISOString();
+    }
+    const res = await apiFetch(`/studio/orgs/${org.id}/booths/${boothId}/vouchers`, {
+      method: 'POST',
+      body: JSON.stringify({ count, valueType, value, expiresAt, note }),
     });
+    if (!res.ok) return { status: 'error', message: await apiError(res, 'Gagal membuat voucher.') };
+    const result = (await res.json()) as { batchId: string; codes: CreatedVoucher[] };
     revalidatePath(`/booths/${boothId}/vouchers`);
     return {
       status: 'created',
-      message: `${result.codes.length} voucher dibuat. Simpan atau cetak kodenya sekarang — kode tidak bisa ditampilkan lagi.`,
+      message: `${result.codes.length} voucher dibuat. Kode juga tetap bisa dilihat dan disalin di daftar di bawah.`,
       batchId: result.batchId,
-      codes: result.codes.map((code) => ({ code, formatted: formatVoucherCode(code) })),
+      codes: result.codes,
       valueLabel: valueType === 'full' ? 'Gratis 1 sesi' : `Rp${value.toLocaleString('id-ID')}`,
-      expiresLabel: result.expiresOn ? `Berlaku s.d. ${result.expiresOn}` : 'Tanpa batas waktu',
+      expiresLabel: expiresOn ? `Berlaku s.d. ${expiresOn}` : 'Tanpa batas waktu',
     };
   } catch (err) {
     return {
       status: 'error',
       message: err instanceof Error ? err.message : 'Gagal membuat voucher.',
     };
+  }
+}
+
+export type RevealResult =
+  | { ok: true; codes: { id: string; code: string | null; formatted: string | null }[] }
+  | { ok: false; message: string };
+
+/** Full codes for the owner (`ids` = specific vouchers, null = all of the booth). Audited by the API. */
+export async function revealVoucherCodesAction(
+  boothId: string,
+  ids: string[] | null,
+): Promise<RevealResult> {
+  const { org } = await requireOrg();
+  if (org.role === 'operator')
+    return { ok: false, message: 'Hanya owner/manager yang dapat melihat kode voucher.' };
+  try {
+    const q = ids ? `?ids=${encodeURIComponent(ids.join(','))}` : '';
+    const res = await apiFetch(`/studio/orgs/${org.id}/booths/${boothId}/vouchers/codes${q}`);
+    if (!res.ok) return { ok: false, message: await apiError(res, 'Gagal mengambil kode.') };
+    return { ok: true, ...((await res.json()) as Omit<Extract<RevealResult, { ok: true }>, 'ok'>) };
+  } catch (err) {
+    return { ok: false, message: err instanceof Error ? err.message : 'Gagal mengambil kode.' };
+  }
+}
+
+/** Owner switch: vouchers also work while the booth is offline (device keeps the hash list). */
+export async function setVoucherOfflineAction(
+  boothId: string,
+  enabled: boolean,
+): Promise<{ ok: boolean; message?: string }> {
+  const { org } = await requireOrg();
+  if (org.role === 'operator') return { ok: false, message: 'Operator tidak dapat mengubah ini.' };
+  try {
+    const res = await apiFetch(`/studio/orgs/${org.id}/booths/${boothId}/voucher-offline`, {
+      method: 'PUT',
+      body: JSON.stringify({ enabled }),
+    });
+    if (!res.ok) return { ok: false, message: await apiError(res, 'Gagal menyimpan.') };
+    revalidatePath(`/booths/${boothId}/vouchers`);
+    return { ok: true };
+  } catch (err) {
+    return { ok: false, message: err instanceof Error ? err.message : 'Gagal menyimpan.' };
   }
 }

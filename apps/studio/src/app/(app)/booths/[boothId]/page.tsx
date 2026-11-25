@@ -3,9 +3,12 @@ import { validateBoothConfig } from '@pb/schema';
 import { Alert, Button, Card, CardContent, CardDescription, CardHeader, CardTitle } from '@pb/ui';
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
+import { ConfirmSubmit } from '@/components/confirm-submit';
+import { idr, METHOD_LABEL } from '@/lib/format';
 import { asUser, requireOrg } from '@/lib/org';
+import { timezoneLabel } from '@/lib/timezones';
 import { revokeDeviceAction } from './actions';
-import { PairDeviceForm, RollbackButton } from './booth-forms';
+import { PairDeviceForm, PaymentForm, RollbackButton } from './booth-forms';
 import { PagePreviews } from './page-previews';
 
 const ONLINE_MS = 2 * 60 * 1000;
@@ -56,7 +59,8 @@ export default async function BoothPage({ params }: { params: Promise<{ boothId:
             {row.booth.name}
           </h1>
           <p className="text-sm text-muted-foreground" data-testid="booth-status">
-            {tz} · {active ? `Versi aktif v${active.version}` : 'Belum dipublikasikan'}
+            {timezoneLabel(tz)} ·{' '}
+            {active ? `Versi aktif v${active.version}` : 'Belum dipublikasikan'}
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
@@ -96,9 +100,38 @@ export default async function BoothPage({ params }: { params: Promise<{ boothId:
                 <Stat label="Frame" value={config.frames.length} />
                 <Stat label="Filter" value={config.filters.length} />
               </dl>
+              <dl
+                className="grid grid-cols-2 gap-4 text-sm sm:grid-cols-3"
+                data-testid="booth-pricing"
+              >
+                <Stat
+                  label="Harga dasar"
+                  value={
+                    config.flow.eventMode ? 'Gratis (mode event)' : idr(config.pricing.basePrice)
+                  }
+                />
+                <Stat label="Lembar termasuk" value={config.pricing.includedPrints} />
+                <Stat
+                  label="Cetak tambahan"
+                  value={
+                    config.pricing.extraPrintPrice === null
+                      ? 'Tidak dijual'
+                      : `${idr(config.pricing.extraPrintPrice)}/lembar`
+                  }
+                />
+              </dl>
+              {canEdit && (
+                <p className="text-xs text-muted-foreground">
+                  Harga dan alur diatur di{' '}
+                  <Link href={`/booths/${boothId}/editor?panel=settings`} className="underline">
+                    Editor → Atur
+                  </Link>
+                  .
+                </p>
+              )}
               {validation?.success ? (
                 <Alert variant="success" data-testid="draft-valid">
-                  Draft valid dan siap dipublikasikan.
+                  Draft valid. Tekan <b>Publish</b> di editor agar perubahan tampil di booth.
                 </Alert>
               ) : (
                 <Alert variant="destructive">
@@ -114,13 +147,44 @@ export default async function BoothPage({ params }: { params: Promise<{ boothId:
         </CardContent>
       </Card>
 
+      {config && (
+        <Card data-testid="payment-card">
+          <CardHeader>
+            <CardTitle className="text-base">Pembayaran</CardTitle>
+            <CardDescription>
+              Pilih cara pembeli membayar, atau matikan pembayaran untuk acara tertentu. Perubahan
+              langsung berlaku di booth.
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            {canEdit ? (
+              <PaymentForm
+                boothId={boothId}
+                methods={config.flow.paymentMethods}
+                eventMode={config.flow.eventMode}
+              />
+            ) : (
+              <p className="text-sm">
+                {config.flow.eventMode
+                  ? 'Mode event: tanpa pembayaran'
+                  : config.flow.paymentMethods.map((m) => METHOD_LABEL[m] ?? m).join(', ')}
+              </p>
+            )}
+          </CardContent>
+        </Card>
+      )}
+
       {validation?.success && (
         <Card>
           <CardHeader>
             <CardTitle className="text-base">Pratinjau halaman</CardTitle>
           </CardHeader>
           <CardContent>
-            <PagePreviews config={validation.config} boothName={row.booth.name} />
+            <PagePreviews
+              config={validation.config}
+              boothName={row.booth.name}
+              editorHref={`/booths/${boothId}/editor`}
+            />
           </CardContent>
         </Card>
       )}
@@ -171,17 +235,19 @@ export default async function BoothPage({ params }: { params: Promise<{ boothId:
                         className="text-xs text-muted-foreground"
                         data-testid="device-config-version"
                       >
-                        Config terpasang: {d.lastConfigVersion ? `v${d.lastConfigVersion}` : '—'} ·
-                        Heartbeat: {formatTime(d.lastHeartbeatAt, tz)}
+                        Versi desain: {d.lastConfigVersion ? `v${d.lastConfigVersion}` : '—'} ·
+                        Kabar terakhir: {formatTime(d.lastHeartbeatAt, tz)}
                       </div>
                     </div>
                     {canEdit && !d.revokedAt && (
                       <form action={revokeDeviceAction}>
                         <input type="hidden" name="boothId" value={boothId} />
                         <input type="hidden" name="deviceId" value={d.id} />
-                        <Button type="submit" size="sm" variant="ghost">
-                          Cabut
-                        </Button>
+                        <ConfirmSubmit
+                          label="Cabut"
+                          confirmLabel="Ya, cabut"
+                          message={`Cabut "${d.name}"? Kiosk di perangkat ini langsung berhenti dan harus dipasang ulang dengan kode baru.`}
+                        />
                       </form>
                     )}
                   </li>

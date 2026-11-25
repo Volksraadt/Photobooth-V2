@@ -30,6 +30,14 @@ export class RateLimiter {
 
   constructor(private readonly now: () => number = Date.now) {}
 
+  /** Seconds until `key` is allowed again, or 0 when it has not used up `max` (does not count). */
+  blockedFor(key: string, max: number): number {
+    const t = this.now();
+    const entry = this.hits.get(key);
+    if (!entry || entry.resetAt <= t || entry.count < max) return 0;
+    return Math.max(1, Math.ceil((entry.resetAt - t) / 1000));
+  }
+
   /** true = allowed. */
   take(key: string, max: number, windowMs: number): { ok: boolean; retryAfterSec: number } {
     const t = this.now();

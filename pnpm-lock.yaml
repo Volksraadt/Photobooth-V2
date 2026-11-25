@@ -263,6 +263,9 @@ importers:
       '@hono/node-server':
         specifier: ^2.1.11
         version: 2.1.11(hono@4.13.20)
+      '@paralleldrive/cuid2':
+        specifier: ^3.3.0
+        version: 3.3.0
       '@pb/crypto':
         specifier: workspace:*
         version: link:../../packages/crypto
@@ -293,10 +296,6 @@ importers:
       zod:
         specifier: ^4.6.7
         version: 4.6.7
-    devDependencies:
-      '@paralleldrive/cuid2':
-        specifier: ^3.3.0
-        version: 3.3.0
 
   apps/camera:
     dependencies:

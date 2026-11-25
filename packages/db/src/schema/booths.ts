@@ -40,6 +40,11 @@ export const booths = pgTable(
       onDelete: 'set null',
     }),
     status: boothStatus('status').notNull().default('active'),
+    /**
+     * Owner allows vouchers while the booth is offline. Only then does the device receive the
+     * voucher hash list (8-digit codes; a copied list can be guessed). Off = vouchers need internet.
+     */
+    voucherOffline: boolean('voucher_offline').notNull().default(false),
     ...timestamps,
   },
   (t) => [index('booths_org_idx').on(t.orgId)],

@@ -50,6 +50,13 @@
       "when": 1795554992108,
       "tag": "0006_audit_hardening",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1795613755056,
+      "tag": "0007_voucher_8_digit",
+      "breakpoints": true
     }
   ]
 }

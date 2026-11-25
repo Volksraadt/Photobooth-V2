@@ -513,7 +513,7 @@ describe('F4: payment methods + offline', () => {
       h.send({ type: 'NETWORK.ONLINE' });
       await h.tick(0);
       expect(h.calls.payments).toBe(1);
-      typeCode(h, '1234567890123456');
+      typeCode(h, '12345678');
       h.send({ type: 'VOUCHER.SUBMIT' });
       await h.tick(0);
       expect(h.state().matches('capture')).toBe(true);
@@ -545,20 +545,20 @@ describe('F4: payment methods + offline', () => {
   it('voucher: wrong code shows the reason, a valid code pays and cancels the pending QRIS', async () => {
     const h = start(makeConfig(allMethods), {
       voucher: (code) =>
-        code === '1234567890123456' ? { ok: true, offline: true } : { ok: false, reason: 'used' },
+        code === '12345678' ? { ok: true, offline: true } : { ok: false, reason: 'used' },
     });
     await toPayment(h);
     const qrPayment = h.state().context.session!.paymentId;
     typeCode(h, '1111');
     h.send({ type: 'VOUCHER.SUBMIT' }); // incomplete: ignored
     expect(h.calls.vouchers).toEqual([]);
-    typeCode(h, '222233334444');
+    typeCode(h, '2222');
     h.send({ type: 'VOUCHER.SUBMIT' });
     await h.tick(0);
     expect(h.state().context.voucher).toEqual({ code: '', status: 'used' });
-    typeCode(h, '12345678901234569'); // 17th digit ignored
+    typeCode(h, '123456789'); // 9th digit ignored
     h.send({ type: 'VOUCHER.BACKSPACE' });
-    typeCode(h, '6');
+    typeCode(h, '8');
     h.send({ type: 'VOUCHER.SUBMIT' });
     await h.tick(0);
     expect(h.state().matches('capture')).toBe(true);

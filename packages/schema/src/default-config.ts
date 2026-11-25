@@ -258,14 +258,14 @@ export function createDefaultBoothConfig(opts: CreateDefaultBoothConfigOptions):
       ),
       text(
         '{{paymentHint}}',
-        { x: 960, y: 340, width: 700, height: 120 },
-        34,
+        { x: 960, y: 330, width: 700, height: 80 },
+        30,
         { align: 'left', color: C.muted },
       ),
       make(
         'voucher-input',
         'Voucher',
-        { x: 960, y: 480, width: 700, height: 280 },
+        { x: 960, y: 420, width: 700, height: 360 },
         {
           variant: 'field',
           textStyle: textStyle(40, { color: C.dark }),

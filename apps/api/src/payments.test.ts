@@ -10,6 +10,7 @@ import { createId } from '@paralleldrive/cuid2';
 import {
   auditLogs,
   BoothConfigEvents,
+  booths,
   cashApprovals,
   createBoothFromTemplate,
   createOrg,
@@ -361,7 +362,7 @@ describe('QRIS payment', () => {
 });
 
 describe('vouchers + cash + session sync', () => {
-  const code = '1234567890123456';
+  const code = '12345678';
   beforeAll(async () => {
     await insertVouchers(db, {
       orgId,
@@ -371,13 +372,20 @@ describe('vouchers + cash + session sync', () => {
       valueType: 'full',
       value: 0,
       expiresAt: null,
-      codes: [{ codeHash: hashVoucherCode(boothId, code), last4: '3456' }],
+      codes: [{ codeHash: hashVoucherCode(boothId, code), last4: '5678' }],
       userId: (await db.select().from(auditLogs).limit(1))[0]!.actorId!,
     });
   });
 
+  it('sends no hashes unless the owner allows offline vouchers for the booth', async () => {
+    const off = await call('/device/vouchers');
+    expect(off.body).toEqual({ offlineAllowed: false, vouchers: [] });
+    await db.update(booths).set({ voucherOffline: true }).where(eq(booths.id, boothId));
+  });
+
   it('lists hashes for the device booth only', async () => {
     const res = await call('/device/vouchers');
+    expect(res.body.offlineAllowed).toBe(true);
     const list = res.body.vouchers as { codeHash: string }[];
     expect(list.map((v) => v.codeHash)).toContain(hashVoucherCode(boothId, code));
     expect(JSON.stringify(res.body)).not.toContain(code);
@@ -408,6 +416,25 @@ describe('vouchers + cash + session sync', () => {
       body: { ...body(newSession()), codeHash: 'a'.repeat(64) },
     });
     expect(bogus.body.result).toBe('invalid');
+  });
+
+  it('limits wrong codes per device (8-digit codes must not be guessable online)', async () => {
+    const wrong = () =>
+      call('/device/vouchers/redeem', {
+        body: {
+          codeHash: 'b'.repeat(64),
+          session: newSession(),
+          amount: price(),
+          usedAt: new Date().toISOString(),
+          offline: false,
+        },
+      });
+    // One miss was counted by the previous test; the limit is 10 per 10 minutes.
+    for (let i = 0; i < 9; i++) expect((await wrong()).body.result).toBe('invalid');
+    const blocked = await wrong();
+    expect(blocked.status).toBe(429);
+    expect(blocked.body).toMatchObject({ error: 'too_many_attempts' });
+    expect(blocked.body.retryAfterSec).toBeGreaterThan(0);
   });
 
   it('applies offline cash approvals and session records from the outbox (idempotent)', async () => {
@@ -489,5 +516,60 @@ describe('vouchers + cash + session sync', () => {
     });
     const [row] = await db.select().from(sessions).where(eq(sessions.id, s.id));
     expect(row).toMatchObject({ status: 'completed', paymentMethod: 'qris', grossAmount: price() });
+  });
+});
+
+describe('vouchers (Studio)', () => {
+  it('creates 8-digit codes, stores them hashed + encrypted, and shows them again to the owner', async () => {
+    const created = await call(`/studio/orgs/${orgId}/booths/${boothId}/vouchers`, {
+      token: userToken,
+      body: { count: 2, valueType: 'full', value: 0, expiresAt: null, note: 'uji' },
+    });
+    expect(created.status).toBe(200);
+    const codes = created.body.codes as { code: string; formatted: string }[];
+    expect(codes).toHaveLength(2);
+    for (const c of codes) {
+      expect(c.code).toMatch(/^\d{8}$/);
+      expect(c.formatted).toBe(`${c.code.slice(0, 4)}-${c.code.slice(4)}`);
+    }
+    const rows = await db
+      .select()
+      .from(vouchers)
+      .where(eq(vouchers.batchId, created.body.batchId as string));
+    expect(rows).toHaveLength(2);
+    for (const r of rows) {
+      expect(r.codeHash).toMatch(/^[a-f0-9]{64}$/);
+      expect(r.codeEncrypted?.startsWith('v1.')).toBe(true);
+      for (const c of codes) expect(r.codeEncrypted).not.toContain(c.code);
+    }
+
+    const shown = await call(
+      `/studio/orgs/${orgId}/booths/${boothId}/vouchers/codes?ids=${rows.map((r) => r.id).join(',')}`,
+      { token: userToken },
+    );
+    expect(shown.status).toBe(200);
+    expect((shown.body.codes as { code: string }[]).map((c) => c.code).sort()).toEqual(
+      codes.map((c) => c.code).sort(),
+    );
+    const audit = await db.select().from(auditLogs).where(eq(auditLogs.action, 'voucher.reveal'));
+    expect(audit.length).toBeGreaterThan(0);
+
+    // A device token cannot read codes; Studio routes need a user token.
+    expect((await call(`/studio/orgs/${orgId}/booths/${boothId}/vouchers/codes`)).status).toBe(401);
+  });
+
+  it('owner switches offline vouchers per booth (audited)', async () => {
+    const off = await call(`/studio/orgs/${orgId}/booths/${boothId}/voucher-offline`, {
+      method: 'PUT',
+      token: userToken,
+      body: { enabled: false },
+    });
+    expect(off.status).toBe(200);
+    expect((await call('/device/vouchers')).body).toEqual({ offlineAllowed: false, vouchers: [] });
+    const audit = await db
+      .select()
+      .from(auditLogs)
+      .where(eq(auditLogs.action, 'booth.voucher_offline'));
+    expect(audit.at(-1)?.after).toEqual({ enabled: false });
   });
 });
