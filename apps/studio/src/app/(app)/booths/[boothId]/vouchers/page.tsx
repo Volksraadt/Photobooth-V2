@@ -59,7 +59,7 @@ export default async function VouchersPage({ params }: { params: Promise<{ booth
           {vouchers.length === 0 ? (
             <p className="text-sm text-muted-foreground">Belum ada voucher.</p>
           ) : (
-            <table className="w-full text-sm" data-testid="voucher-list">
+            <table className="data-table w-full text-sm" data-testid="voucher-list">
               <thead className="text-left text-muted-foreground">
                 <tr>
                   <th className="py-1">Kode</th>
@@ -72,7 +72,7 @@ export default async function VouchersPage({ params }: { params: Promise<{ booth
               <tbody className="divide-y">
                 {vouchers.map((v) => (
                   <tr key={v.id} data-testid={`voucher-${v.codeLast4}`}>
-                    <td className="py-1 font-mono">····-····-{v.codeLast4}</td>
+                    <td className="whitespace-nowrap py-1 font-mono">····-····-{v.codeLast4}</td>
                     <td>
                       {v.valueType === 'full' ? 'Penuh' : `Rp${v.value.toLocaleString('id-ID')}`}
                     </td>

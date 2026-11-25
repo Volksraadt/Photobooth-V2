@@ -193,7 +193,7 @@ export default async function BillingPage() {
           {!state || state.invoices.length === 0 ? (
             <p className="text-sm text-muted-foreground">Belum ada tagihan.</p>
           ) : (
-            <table className="w-full text-sm" data-testid="invoice-list">
+            <table className="data-table w-full text-sm" data-testid="invoice-list">
               <thead className="text-left text-muted-foreground">
                 <tr>
                   <th className="py-1">Tanggal</th>

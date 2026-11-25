@@ -216,7 +216,7 @@ export default async function ReportsPage({ searchParams }: { searchParams: Prom
             <CardTitle className="text-base">Metode pembayaran</CardTitle>
           </CardHeader>
           <CardContent>
-            <table className="w-full text-sm" data-testid="method-table">
+            <table className="data-table w-full text-sm" data-testid="method-table">
               <thead className="text-left text-muted-foreground">
                 <tr>
                   <th className="py-1">Metode</th>
@@ -244,7 +244,7 @@ export default async function ReportsPage({ searchParams }: { searchParams: Prom
             {report.booths.length === 0 ? (
               <p className="text-sm text-muted-foreground">Belum ada penjualan.</p>
             ) : (
-              <table className="w-full text-sm" data-testid="booth-table">
+              <table className="data-table w-full text-sm" data-testid="booth-table">
                 <thead className="text-left text-muted-foreground">
                   <tr>
                     <th className="py-1">Booth</th>

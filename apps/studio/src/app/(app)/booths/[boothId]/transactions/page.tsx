@@ -99,7 +99,7 @@ export default async function TransactionsPage({
           {sessions.length === 0 ? (
             <p className="text-sm text-muted-foreground">Belum ada sesi.</p>
           ) : (
-            <table className="w-full text-sm" data-testid="session-list">
+            <table className="data-table w-full text-sm" data-testid="session-list">
               <thead className="text-left text-muted-foreground">
                 <tr>
                   <th className="py-1">Kode</th>
@@ -124,7 +124,7 @@ export default async function TransactionsPage({
                         {s.code}
                       </Link>
                     </td>
-                    <td>{formatInZone(s.startedAt, tz)}</td>
+                    <td className="whitespace-nowrap">{formatInZone(s.startedAt, tz)}</td>
                     <td>
                       {s.paymentMethod ? METHOD[s.paymentMethod] : '—'}
                       {s.offline && (
@@ -137,7 +137,7 @@ export default async function TransactionsPage({
                     <td className="text-right">{idr(s.feeAmount)}</td>
                     <td className="text-right">{idr(s.netAmount)}</td>
                     <td>{STATUS[s.status] ?? s.status}</td>
-                    <td data-testid={`upload-${s.code}`}>
+                    <td className="whitespace-nowrap" data-testid={`upload-${s.code}`}>
                       <UploadCell session={s} jobs={jobs.filter((j) => j.sessionId === s.id)} />
                     </td>
                   </tr>

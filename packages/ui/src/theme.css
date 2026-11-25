@@ -29,3 +29,35 @@
     color: var(--color-foreground);
   }
 }
+
+/* Data tables in Studio: cell spacing, row separators, headers and numbers on one line. */
+@layer components {
+  .data-table {
+    border-collapse: collapse;
+  }
+  .data-table th {
+    padding: 0.5rem 0.75rem;
+    font-weight: 500;
+    font-size: 0.75rem;
+    white-space: nowrap;
+    border-bottom: 1px solid var(--color-border);
+  }
+  .data-table td {
+    padding: 0.5rem 0.75rem;
+    vertical-align: top;
+  }
+  .data-table th:first-child,
+  .data-table td:first-child {
+    padding-left: 0;
+  }
+  .data-table th:last-child,
+  .data-table td:last-child {
+    padding-right: 0;
+  }
+  .data-table tbody tr + tr td {
+    border-top: 1px solid var(--color-border);
+  }
+  .data-table .text-right {
+    white-space: nowrap;
+  }
+}

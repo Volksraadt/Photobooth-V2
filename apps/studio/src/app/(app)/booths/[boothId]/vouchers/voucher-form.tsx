@@ -46,7 +46,7 @@ export function VoucherForm({ boothId, boothName }: { boothId: string; boothName
     <div className="space-y-4">
       <form action={action} className="space-y-3" data-testid="voucher-form">
         <input type="hidden" name="boothId" value={boothId} />
-        <div className="grid gap-3 sm:grid-cols-4">
+        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
           <div className="space-y-1">
             <Label htmlFor="v-count">Jumlah</Label>
             <Input

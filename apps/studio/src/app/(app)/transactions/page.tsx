@@ -127,7 +127,7 @@ export default async function TransactionsPage({ searchParams }: { searchParams:
           {list.rows.length === 0 ? (
             <p className="text-sm text-muted-foreground">Tidak ada sesi pada rentang ini.</p>
           ) : (
-            <table className="w-full text-sm" data-testid="transaction-list">
+            <table className="data-table w-full text-sm" data-testid="transaction-list">
               <thead className="text-left text-muted-foreground">
                 <tr>
                   <th className="py-1">Kode</th>
@@ -150,7 +150,7 @@ export default async function TransactionsPage({ searchParams }: { searchParams:
                       </Link>
                     </td>
                     <td>{s.boothName}</td>
-                    <td>{formatDateTime(s.startedAt, s.timezone)}</td>
+                    <td className="whitespace-nowrap">{formatDateTime(s.startedAt, s.timezone)}</td>
                     <td>
                       {s.paymentMethod ? METHOD_LABEL[s.paymentMethod] : '—'}
                       {s.offline && (
@@ -162,12 +162,12 @@ export default async function TransactionsPage({ searchParams }: { searchParams:
                     <td className="text-right">{idr(s.grossAmount)}</td>
                     <td className="text-right">{idr(s.netAmount)}</td>
                     <td>{STATUS[s.status] ?? s.status}</td>
-                    <td>
+                    <td className="whitespace-nowrap">
                       {s.print
                         ? `${s.print.sheets}× ${s.print.status === 'done' ? 'tercetak' : s.print.status}`
                         : '—'}
                     </td>
-                    <td>
+                    <td className="whitespace-nowrap">
                       <UploadCell
                         session={{
                           id: s.id,

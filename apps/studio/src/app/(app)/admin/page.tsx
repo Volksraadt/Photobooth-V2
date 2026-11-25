@@ -94,7 +94,7 @@ export default async function AdminPage() {
 
       <Card>
         <CardContent className="overflow-x-auto pt-6">
-          <table className="w-full text-sm" data-testid="admin-orgs">
+          <table className="data-table w-full text-sm" data-testid="admin-orgs">
             <thead className="text-left text-muted-foreground">
               <tr>
                 <th className="py-1">Organisasi</th>

@@ -90,7 +90,7 @@ export default async function AuditPage({
           {logs.length === 0 ? (
             <p className="text-sm text-muted-foreground">Belum ada catatan.</p>
           ) : (
-            <table className="w-full text-sm" data-testid="audit-list">
+            <table className="data-table w-full text-sm" data-testid="audit-list">
               <thead className="text-left text-muted-foreground">
                 <tr>
                   <th className="py-1">Waktu</th>
@@ -104,12 +104,16 @@ export default async function AuditPage({
                   <tr key={l.id} className="align-top" data-action={l.action}>
                     <td className="whitespace-nowrap py-1">{formatDateTime(l.at, org.timezone)}</td>
                     <td>{ACTION_LABEL[l.action] ?? l.action}</td>
-                    <td className="font-mono text-xs">
+                    <td className="break-all font-mono text-xs">
                       {l.entity}
                       {l.entityId ? `:${l.entityId.slice(0, 10)}` : ''}
                     </td>
                     <td className="text-xs text-muted-foreground">
-                      {l.actorId ? l.actorId.slice(0, 8) : 'sistem / perangkat'}
+                      {!l.actorId
+                        ? 'sistem / perangkat'
+                        : l.actorId === user.id
+                          ? 'Anda'
+                          : `anggota ${l.actorId.slice(0, 8)}`}
                     </td>
                   </tr>
                 ))}
