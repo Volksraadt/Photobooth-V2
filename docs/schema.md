@@ -294,7 +294,7 @@ Semua tabel bisnis punya `org_id`, `created_at`, `updated_at`. ID memakai `cuid2
 ### B.2 Booth, device, config
 | Tabel | Kolom utama |
 |---|---|
-| `booths` | org_id, name, timezone, active_config_id, status (`active` | `inactive` = diarsipkan: tidak dihitung `maxBooths`, pairing ditolak), voucher_offline |
+| `booths` | org_id, name, timezone, active_config_id, status (`active` atau `inactive` = diarsipkan: tidak dihitung `maxBooths`, pairing ditolak), voucher_offline |
 | `booth_configs` | booth_id, version, config (jsonb `BoothConfig`), published_by, published_at |
 | `booth_drafts` | booth_id, config (jsonb), updated_by — draft editor sebelum publish |
 | `devices` | org_id, booth_id, name, token_hash, platform, app_version, last_heartbeat_at, last_config_version, camera_status, printer_status, revoked_at |
