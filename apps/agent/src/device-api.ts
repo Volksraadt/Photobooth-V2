@@ -77,6 +77,19 @@ export class DeviceApiError extends Error {
   missing: string[] = [];
 }
 
+/**
+ * True when the API itself was not reached: a network failure / timeout, or a gateway error from
+ * a proxy or tunnel in front of it (502/503/504, Cloudflare 520–530) that carries no API error
+ * code. Our own API answers 5xx with a JSON `error` code (e.g. `provider_error`), which still
+ * proves it is reachable.
+ */
+export function isApiUnreachable(err: unknown): boolean {
+  if (!(err instanceof DeviceApiError)) return true;
+  if (err.code !== undefined) return false;
+  const s = err.status;
+  return s === 502 || s === 503 || s === 504 || (s >= 520 && s <= 530);
+}
+
 async function apiError(res: Response): Promise<DeviceApiError> {
   const json = (await res.json().catch(() => null)) as {
     error?: string;

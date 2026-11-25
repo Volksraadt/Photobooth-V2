@@ -1,7 +1,7 @@
 import { readFile, rm } from 'node:fs/promises';
 import { basename, join } from 'node:path';
 import { sha256Hex, type DeviceApi } from './device-api';
-import { DeviceApiError } from './device-api';
+import { DeviceApiError, isApiUnreachable } from './device-api';
 import type { SessionFiles } from './sessions';
 import type { AgentStore, LocalFileRow, LocalSessionRow } from './store';
 import type { Telemetry } from './telemetry';
@@ -191,8 +191,8 @@ export class UploadQueue {
 
   private onFailure(session: LocalSessionRow, err: unknown): boolean {
     if (this.stopped) return false; // shutting down: the store may already be closing
-    if (err instanceof DeviceApiError) {
-      this.telemetry.report(err); // an HTTP answer proves the API is reachable
+    if (err instanceof DeviceApiError && !isApiUnreachable(err)) {
+      this.telemetry.report(err); // an API answer proves the API is reachable
       if (err.status === 401) return false; // revoked: ConfigSync handles re-pairing
       if (err.code === 'session_unknown') {
         // The outbox has not delivered the session record yet: try again shortly, not a failure.
@@ -229,8 +229,8 @@ export class UploadQueue {
       sessionId: session.id,
       attempts,
     });
-    // Network down: the next session would fail the same way.
-    return err instanceof DeviceApiError;
+    // Network down (or only a proxy/tunnel answered): the next session would fail the same way.
+    return !isApiUnreachable(err);
   }
 
   private at(ms: number): string {

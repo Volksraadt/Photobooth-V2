@@ -335,6 +335,36 @@ describe('offline: vouchers + cash, synced when back online', () => {
     expect(body.printJob?.status).toBe('done');
   }, 60_000);
 
+  it('stays offline while only a tunnel/proxy answers (HTTP 530/502 without an API body)', async () => {
+    const queued = agent.store.outboxCount();
+    expect(queued).toBeGreaterThan(0);
+    for (const status of [530, 502]) {
+      // Cloudflare answers 530 (502 for a plain reverse proxy) while the origin API is down.
+      const gw = await new Promise<Server>((resolve) => {
+        const s = serve(
+          {
+            fetch: () => new Response('origin unreachable', { status }),
+            port: apiPort,
+            hostname: '127.0.0.1',
+          },
+          () => resolve(s as Server),
+        ) as Server;
+      });
+      try {
+        await agent.telemetry.beat();
+        expect(agent.telemetry.isOnline).toBe(false);
+        await agent.telemetry.flush();
+        expect(agent.telemetry.isOnline).toBe(false);
+        expect(agent.store.outboxCount()).toBe(queued);
+      } finally {
+        await new Promise<void>((r) => {
+          gw.closeAllConnections?.();
+          gw.close(() => r());
+        });
+      }
+    }
+  });
+
   it('after reconnecting, the session, voucher use and cash approval appear in the API', async () => {
     expect(await db.select().from(sessions).where(eq(sessions.id, s1.id))).toHaveLength(0);
     await startApi();

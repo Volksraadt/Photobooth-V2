@@ -1,5 +1,5 @@
 import type { DeviceApi, HeartbeatBody, OutboxBatch } from './device-api';
-import { DeviceApiError } from './device-api';
+import { DeviceApiError, isApiUnreachable } from './device-api';
 import type { AgentStore, OutboxRow } from './store';
 
 /**
@@ -38,11 +38,11 @@ export class Telemetry {
   }
 
   /**
-   * Result of any API call (payments, vouchers): a response = online; a network failure or
-   * timeout = offline. HTTP errors still prove the API is reachable.
+   * Result of any API call (payments, vouchers): a response = online; a network failure,
+   * timeout or proxy/tunnel gateway error = offline. API errors still prove it is reachable.
    */
   report(err: unknown | null) {
-    if (err === null || err instanceof DeviceApiError) {
+    if (err === null || !isApiUnreachable(err)) {
       this.setOnline(true);
     } else {
       this.setOnline(false);
@@ -106,8 +106,9 @@ export class Telemetry {
     } catch (err) {
       // 401 = revoked: ConfigSync handles re-pairing; not an "offline" state.
       if (!(err instanceof DeviceApiError && err.status === 401)) {
-        this.setOnline(err instanceof DeviceApiError);
-        if (!(err instanceof DeviceApiError)) this.scheduleRetry();
+        const unreachable = isApiUnreachable(err);
+        this.setOnline(!unreachable);
+        if (unreachable) this.scheduleRetry();
       }
     }
   }
@@ -184,7 +185,10 @@ export class Telemetry {
           rows.filter((r) => r.kind !== 'payment_cancel').map((r) => r.id),
           err instanceof Error ? err.message : String(err),
         );
-        if (!(err instanceof DeviceApiError)) this.setOnline(false);
+        if (isApiUnreachable(err)) {
+          this.setOnline(false);
+          this.scheduleRetry();
+        }
         return;
       }
     }

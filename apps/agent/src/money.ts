@@ -4,6 +4,7 @@ import { verifyAdminPin } from '@pb/schema';
 import type { ConfigSync } from './config-sync';
 import {
   DeviceApiError,
+  isApiUnreachable,
   type DevicePayment,
   type DeviceApi,
   type RedeemResult,
@@ -37,7 +38,7 @@ const PIN_MAX_FAILURES = 5;
 const PIN_LOCK_MS = 60_000;
 const PIN_STATE_KEY = 'cash.pinState';
 
-const isNetworkError = (err: unknown) => !(err instanceof DeviceApiError);
+const isNetworkError = isApiUnreachable;
 
 /**
  * Buyer payments on the device (F4). QRIS goes through apps/api (the agent never sees provider

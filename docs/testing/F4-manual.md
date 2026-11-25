@@ -15,7 +15,7 @@ di kolom paling kanan setiap tabel.
 2. `pnpm install`, `pnpm dev` (Postgres lokal + migrasi 0003, Studio :3000, API :8787, agent :47810, Kiosk :5173).
    Log API harus menampilkan `[api] payments: midtrans` (atau `mock`) tanpa peringatan SECRET_MASTER_KEY.
 3. Di Studio: daftar/masuk → buat organisasi → buat booth dari template → di editor, **Pengaturan
-   booth**: atur PIN admin (mis. `2468`), pastikan metode pembayaran QRIS + Voucher + Tunai aktif → Publish.
+   booth**: atur PIN admin 6–8 digit (mis. `246813`; R2), pastikan metode pembayaran QRIS + Voucher + Tunai aktif → Publish.
 4. Buka Kiosk `http://localhost:5173/?source=agent&capture=mock&dev=1` → kode pairing → di Studio
    booth → Perangkat → masukkan kode. Kiosk menampilkan Cover.
 
