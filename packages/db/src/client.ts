@@ -6,10 +6,25 @@ import type { Db } from './types';
 /** Idle connection lifetime on Vercel (seconds); the functions stay alive a bit longer. */
 export const SERVERLESS_IDLE_SECONDS = 2;
 
+/**
+ * Supabase transaction pooler (port 6543) → session pooler (5432) on the same host. postgres.js
+ * pipelines concurrent queries on one connection and Supavisor transaction mode hangs on that
+ * (backend stuck in ClientRead, docs/decisions.md 2026-11-26), so it is never used from here.
+ */
+export function sessionPoolerUrl(url: string): string {
+  const fixed = url.replace(/(pooler\.supabase\.com):6543\b/, '$1:5432');
+  if (fixed !== url)
+    console.warn(
+      '[db] DATABASE_URL uses the transaction pooler (6543); using the session pooler (5432).',
+    );
+  return fixed;
+}
+
 export function createDb(
-  url: string,
+  rawUrl: string,
   opts: { max?: number } = {},
 ): { db: Db; close: () => Promise<void> } {
+  const url = sessionPoolerUrl(rawUrl);
   const client = postgres(url, {
     // Supabase poolers cap clients per project (Free session pooler: 15), shared by Studio, API
     // and worker: lower it with PB_DB_POOL_MAX.
