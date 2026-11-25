@@ -270,7 +270,15 @@ export function createKioskMachine(deps: KioskFlowDeps) {
         } else mockPayments.cancel(id);
       },
       onSessionEnd: ({ context }) => {
-        if (context.session) photos.release(context.session.id);
+        const session = context.session;
+        if (!session) return;
+        photos.release(session.id);
+        // Left before paying: the agent marks its local row abandoned (no-op if never created).
+        if (agent && !session.paid) {
+          void agent.abandonSession(session.id).catch((err: unknown) => {
+            console.warn('[kiosk] abandon session failed', err);
+          });
+        }
       },
     },
   });

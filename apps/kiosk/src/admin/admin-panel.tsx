@@ -20,6 +20,14 @@ const STATUS_LABEL: Record<CaptureStatus, string> = {
   error: 'error',
 };
 
+/** Local session status as shown to the booth operator. */
+const SESSION_STATUS_LABEL: Record<string, string> = {
+  capturing: 'berjalan',
+  completed: 'selesai',
+  failed: 'gagal',
+  abandoned: 'dibatalkan (belum bayar)',
+};
+
 const PRINTER_LABEL: Record<string, string> = {
   ok: 'siap',
   warning: 'peringatan',
@@ -591,7 +599,7 @@ function AgentSessions({ agent }: { agent: AgentClient }) {
                 <tr key={s.id}>
                   <td>{s.code}</td>
                   <td>{s.started_at.replace('T', ' ').slice(0, 19)}</td>
-                  <td>{s.status}</td>
+                  <td>{SESSION_STATUS_LABEL[s.status] ?? s.status}</td>
                   <td>{s.files.filter((f) => f.kind === 'original').length}</td>
                   <td>
                     {strip ? (

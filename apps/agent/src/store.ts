@@ -154,7 +154,8 @@ export type LocalSessionRow = {
   payment_method: string | null;
   amount: number;
   extra_prints: number;
-  status: 'capturing' | 'completed' | 'failed';
+  /** `abandoned`: the buyer left before paying (no payment, nothing to upload). */
+  status: 'capturing' | 'completed' | 'failed' | 'abandoned';
   download_url: string | null;
   data: string | null;
   started_at: string;
@@ -670,6 +671,20 @@ export class AgentStore {
   // --- payments (F4) ---
 
   /** Paid while offline (voucher validated locally / cash) or payment reference. */
+  /**
+   * The kiosk dropped a session before it was paid (buyer went back / idle on Payment).
+   * Paid sessions are never touched: they may need a refund or a resume.
+   */
+  abandonSession(id: string): boolean {
+    const res = this.run(
+      `update local_sessions set status = 'abandoned', updated_at = ?
+       where id = ? and status = 'capturing' and payment_method is null`,
+      now(),
+      id,
+    );
+    return Number(res.changes) > 0;
+  }
+
   setSessionPayment(
     id: string,
     patch: { method: string; paymentId?: string | null; offline: boolean },

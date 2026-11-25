@@ -250,6 +250,11 @@ export function createLocalApi(agent: Agent) {
     });
   });
 
+  /** The kiosk dropped an unpaid session (see store.abandonSession). */
+  app.post('/sessions/:id/abandon', (c) =>
+    c.json({ abandoned: agent.store.abandonSession(c.req.param('id')) }),
+  );
+
   app.get('/sessions', (c) => {
     // "camera-test" holds admin test shots, not a buyer session.
     const sessions = agent.store

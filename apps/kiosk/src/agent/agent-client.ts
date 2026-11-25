@@ -347,6 +347,8 @@ export class AgentClient implements AgentLink {
     this.request<AgentPayment | { id: string; status: 'unknown' }>(
       `/payments/${encodeURIComponent(id)}`,
     );
+  abandonSession = (id: string) =>
+    this.json<{ abandoned: boolean }>('POST', `/sessions/${encodeURIComponent(id)}/abandon`, {});
   cancelPayment = (id: string) =>
     this.json<{ status: string }>('POST', `/payments/${encodeURIComponent(id)}/cancel`, {});
   redeemVoucher = (body: { code: string; session: AgentSessionRef; amount: number }) =>
