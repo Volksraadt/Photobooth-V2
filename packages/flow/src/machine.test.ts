@@ -28,6 +28,8 @@ function start(
     online?: boolean;
     paymentOffline?: boolean;
     paymentAlreadyPaid?: boolean;
+    /** createPayment fails for a non-network reason (e.g. Midtrans not set up). */
+    paymentFails?: boolean;
     voucher?: (code: string) => RedeemVoucherOutput;
   } = {},
 ) {
@@ -56,6 +58,7 @@ function start(
         calls.payments++;
         if (opts.paymentOffline) throw new PaymentOfflineError();
         if (opts.paymentAlreadyPaid) throw new PaymentAlreadyPaidError();
+        if (opts.paymentFails) throw new Error('Midtrans belum diatur di Studio');
         return {
           paymentId: `pay-${input.sessionCode}-${calls.payments}`,
           qrString: `QR-${input.amount}`,
@@ -494,6 +497,49 @@ describe('F4: payment methods + offline', () => {
     await toPayment(h);
     expect(h.state().matches({ payment: 'awaiting' })).toBe(true);
     expect(h.state().context.online).toBe(false);
+  });
+
+  describe('QRIS cannot be created (e.g. Midtrans not set up)', () => {
+    it('stays on Payment without QR when voucher/cash are enabled, and does not retry when online', async () => {
+      const h = start(makeConfig(allMethods), {
+        paymentFails: true,
+        voucher: () => ({ ok: true, offline: false }),
+      });
+      await toPayment(h);
+      expect(h.state().matches({ payment: 'awaiting' })).toBe(true);
+      expect(h.state().context.qrisUnavailable).toBe(true);
+      expect(h.state().context.online).toBe(true);
+      expect(h.state().context.error).toBeNull();
+      h.send({ type: 'NETWORK.ONLINE' });
+      await h.tick(0);
+      expect(h.calls.payments).toBe(1);
+      typeCode(h, '1234567890123456');
+      h.send({ type: 'VOUCHER.SUBMIT' });
+      await h.tick(0);
+      expect(h.state().matches('capture')).toBe(true);
+    });
+
+    it('tries again on the next visit to Payment', async () => {
+      const h = start(makeConfig(allMethods), { paymentFails: true });
+      await toPayment(h);
+      h.send({ type: 'BACK' });
+      await h.tick(0);
+      h.send({ type: 'NEXT' });
+      await h.tick(0);
+      expect(h.calls.payments).toBe(2);
+    });
+
+    it('QRIS is the only method: the Error page', async () => {
+      const h = start(
+        makeConfig((c) => {
+          c.flow.paymentMethods = ['qris'];
+        }),
+        { paymentFails: true },
+      );
+      await toPayment(h);
+      expect(h.state().value).toBe('error');
+      expect(h.state().context.error).toMatchObject({ kind: 'payment' });
+    });
   });
 
   it('voucher: wrong code shows the reason, a valid code pays and cancels the pending QRIS', async () => {

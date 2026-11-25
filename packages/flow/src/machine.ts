@@ -193,6 +193,9 @@ export const flowMachine = setup({
       event.method === 'cash' &&
       context.config.flow.paymentMethods.includes('cash'),
     isOnline: ({ context }) => context.online,
+    qrisUnavailable: ({ context }) => context.qrisUnavailable,
+    hasNonQrisMethod: ({ context }) =>
+      context.config.flow.paymentMethods.some((m) => m === 'voucher' || m === 'cash'),
     offlineError: ({ event }) =>
       (event as { error?: { offline?: unknown } }).error?.offline === true,
     alreadyPaidError: ({ event }) =>
@@ -384,6 +387,7 @@ export const flowMachine = setup({
     progress: null,
     error: null,
     shotCounter: 0,
+    qrisUnavailable: false,
   }),
   initial: 'cover',
   on: {
@@ -494,7 +498,10 @@ export const flowMachine = setup({
     },
 
     payment: {
-      entry: [assign({ page: 'payment' as PageType | null }), 'restartIdle'],
+      entry: [
+        assign({ page: 'payment' as PageType | null, qrisUnavailable: false }),
+        'restartIdle',
+      ],
       initial: 'route',
       states: {
         // Offline: no QRIS (it could not be confirmed); voucher + cash still work.
@@ -533,6 +540,12 @@ export const flowMachine = setup({
               { guard: 'alreadyPaidError', target: '#flow.capture', actions: 'markAlreadyPaid' },
               // Went offline while creating: stay on Payment without QRIS.
               { guard: 'offlineError', target: 'awaiting', actions: 'setOffline' },
+              // QRIS cannot be created (e.g. Midtrans not set up): voucher/cash still work.
+              {
+                guard: 'hasNonQrisMethod',
+                target: 'awaiting',
+                actions: assign({ qrisUnavailable: true }),
+              },
               { target: '#flow.error', actions: 'setPaymentError' },
             ],
           },
@@ -550,7 +563,7 @@ export const flowMachine = setup({
             // Back online without a QR: create it now.
             'NETWORK.ONLINE': [
               {
-                guard: and(['qrisEnabled', not('hasQr')]),
+                guard: and(['qrisEnabled', not('hasQr'), not('qrisUnavailable')]),
                 target: 'creating',
                 actions: 'setOnline',
               },

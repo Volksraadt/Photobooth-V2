@@ -108,6 +108,12 @@ export type FlowContext = {
   error: FlowError | null;
   /** Increments on every shot; drives the flash effect. */
   shotCounter: number;
+  /**
+   * Creating the QRIS failed for a non-network reason (e.g. the owner has not set up Midtrans).
+   * The buyer stays on Payment without a QR when voucher or cash is enabled. Reset on every
+   * visit to Payment so a fixed setup is picked up.
+   */
+  qrisUnavailable: boolean;
 };
 
 export type FlowInput = {

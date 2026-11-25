@@ -30,7 +30,8 @@ export type PublishFn = (
   boothId: string,
   config: BoothConfig,
 ) => Promise<
-  { ok: true; version: number } | { ok: false; message: string; issues?: ValidationIssue[] }
+  | { ok: true; version: number; warning?: string | null }
+  | { ok: false; message: string; issues?: ValidationIssue[] }
 >;
 
 export function EditorShell(props: {
@@ -241,7 +242,7 @@ function Toolbar({
   const [showIssues, setShowIssues] = useState(false);
   const [publishing, setPublishing] = useState(false);
   const [result, setResult] = useState<
-    | { kind: 'ok'; version: number }
+    | { kind: 'ok'; version: number; warning?: string | null }
     | { kind: 'error'; message: string; issues?: ValidationIssue[] }
     | null
   >(null);
@@ -264,7 +265,7 @@ function Toolbar({
     setPublishing(false);
     setResult(
       res.ok
-        ? { kind: 'ok', version: res.version }
+        ? { kind: 'ok', version: res.version, warning: res.warning ?? null }
         : { kind: 'error', message: res.message, issues: res.issues },
     );
   };
@@ -365,6 +366,11 @@ function Toolbar({
           {result?.kind === 'ok' && (
             <p className="mb-2 text-emerald-700" data-testid="publish-ok">
               Versi {result.version} dipublikasikan. Perangkat booth akan memperbarui tampilan.
+            </p>
+          )}
+          {result?.kind === 'ok' && result.warning && (
+            <p className="mb-2 text-amber-700" data-testid="publish-warning">
+              {result.warning}
             </p>
           )}
           {result?.kind === 'error' && (
