@@ -63,7 +63,7 @@ test('Midtrans integration page, voucher batch, QRIS paid → capture < 3 s, vou
   await expect(page.getByTestId('voucher-created')).toBeVisible({ timeout: 20_000 });
   const codes = await page.getByTestId('voucher-code').allTextContents();
   expect(codes).toHaveLength(2);
-  expect(codes[0]).toMatch(/^\d{4}-\d{4}-\d{4}-\d{4}$/);
+  expect(codes[0]).toMatch(/^\d{4}-\d{4}$/); // 8 digits since 2026-11-25
 
   // --- Publish + pair ---
   const kiosk = await pairKiosk(context, page, boothUrl);
@@ -89,6 +89,10 @@ test('Midtrans integration page, voucher batch, QRIS paid → capture < 3 s, vou
   // --- Voucher: typed on the payment page (keyboard / scanner path) ---
   await kiosk.reload();
   await toPayment(kiosk);
+  // Phone-style 3×4 keypad (below or beside the field).
+  await expect(kiosk.locator('[data-pb-voucher-keypad^="3x4"] [data-pb-voucher-key]')).toHaveCount(
+    12,
+  );
   await kiosk.keyboard.type(codes[0]!.replace(/-/g, ''));
   await kiosk.keyboard.press('Enter');
   await expect
@@ -106,5 +110,9 @@ test('Midtrans integration page, voucher batch, QRIS paid → capture < 3 s, vou
 
   // Studio shows the voucher as used.
   await page.goto(`${boothUrl}/vouchers`);
-  await expect(page.getByTestId(`voucher-${codes[0]!.slice(-4)}`)).toContainText('Terpakai');
+  const row = page.getByTestId(`voucher-${codes[0]!.slice(-4)}`);
+  await expect(row).toContainText('Terpakai');
+  // The full code can be shown again (stored encrypted by the API).
+  await row.getByRole('button', { name: 'Tampilkan' }).click();
+  await expect(row.getByTestId('voucher-code-shown')).toHaveText(codes[0]!);
 });
