@@ -87,20 +87,20 @@ antrian sesi/voucher/tunai).
 
 | # | Langkah | Hasil yang diharapkan | Hasil |
 |---|---|---|---|
-| 5.1 | Cabut kabel LAN / matikan Wi-Fi laptop (agent + kiosk tetap berjalan) | Dalam ≤ 35 dtk mode admin menunjukkan **offline**; event `went_offline` tercatat | |
-| 5.2 | Mulai sesi → Payment | **QRIS dan timer tidak tampil**; voucher (kolom + keypad) dan tombol Tunai tampil; tidak ada halaman Error | |
-| 5.3 | Ketik kode voucher A (keypad layar atau keyboard) → ✓ | Pindah ke Capture | |
-| 5.4 | Selesaikan sesi sampai tercetak | Strip tercetak; QR di strip = `…/s/<KODE>` (kode sesi lokal) | |
-| 5.5 | Sesi baru → Payment → masukkan voucher A lagi | Ditolak: "Voucher sudah dipakai"; tetap di Payment | |
-| 5.6 | Masukkan voucher nominal Rp1.000 (2.4) | "Nilai voucher kurang" | |
-| 5.7 | Masukkan kode acak 16 digit | "Voucher tidak valid" | |
-| 5.8 | Tekan **Tunai** → PIN pad "Pembayaran tunai" → PIN salah | "PIN salah…" | |
-| 5.9 | PIN benar | Pindah ke Capture; selesaikan sesi (tercetak) | |
-| 5.10 | Mode admin | Antrian: sesi 2, voucher 1, tunai 1 (belum terkirim) | |
-| 5.11 | Sambungkan internet lagi | ≤ 5 dtk status **online**; antrian menjadi 0; QRIS muncul lagi bila sedang di Payment | |
-| 5.12 | Studio → booth → **Transaksi** | Dua sesi offline (Voucher, Tunai) dengan penanda **offline**, status selesai | |
-| 5.13 | Studio → booth → **Voucher** | Voucher A: "Terpakai sesi <KODE> · offline" | |
-| 5.14 | Audit log: `select action, after from audit_logs where action='cash.approve' order by at desc limit 1;` | Ada; `amount`, `deviceId`, `offline: true` | |
+| 5.1 | Cabut kabel LAN / matikan Wi-Fi laptop (agent + kiosk tetap berjalan) | Dalam ≤ 35 dtk mode admin menunjukkan **offline**; event `went_offline` tercatat | ✅ 2026-11-25 (Wi-Fi dicabut sungguhan) |
+| 5.2 | Mulai sesi → Payment | **QRIS dan timer tidak tampil**; voucher (kolom + keypad) dan tombol Tunai tampil; tidak ada halaman Error | ✅ 2026-11-25 |
+| 5.3 | Ketik kode voucher A (keypad layar atau keyboard) → ✓ | Pindah ke Capture | ✅ 2026-11-25 (sesi 5RL6NF7W, 857UM8VM) |
+| 5.4 | Selesaikan sesi sampai tercetak | Strip tercetak; QR di strip = `…/s/<KODE>` (kode sesi lokal) | ✅ 2026-11-25 |
+| 5.5 | Sesi baru → Payment → masukkan voucher A lagi | Ditolak: "Voucher sudah dipakai"; tetap di Payment | ✅ 2026-11-25 "Voucher sudah dipakai" (voucher …4628 dipakai offline sesi sebelumnya) |
+| 5.6 | Masukkan voucher nominal Rp1.000 (2.4) | "Nilai voucher kurang" | ✅ 2026-11-25 |
+| 5.7 | Masukkan kode acak 16 digit | "Voucher tidak valid" | ✅ 2026-11-25 |
+| 5.8 | Tekan **Tunai** → PIN pad "Pembayaran tunai" → PIN salah | "PIN salah…" | ✅ 2026-11-25 "PIN salah. Sisa percobaan: 4." Catatan: pad mulai dengan 4 titik → terkesan PIN 4 digit (perbaikan UI menyusul) |
+| 5.9 | PIN benar | Pindah ke Capture; selesaikan sesi (tercetak) | ✅ 2026-11-25 sesi 2N699SSM tercetak |
+| 5.10 | Mode admin | Antrian: sesi 2, voucher 1, tunai 1 (belum terkirim) | ✅ 2026-11-25 (hanya sesi tunai): session 1, cash_approval 1, print_job 1, upload 1 (HTTP 530) |
+| 5.11 | Sambungkan internet lagi | ≤ 5 dtk status **online**; antrian menjadi 0; QRIS muncul lagi bila sedang di Payment | ✅ 2026-11-25 lewat proxy lokal yang meniru 530 Cloudflare: online 3 dtk, antrian + upload kosong 8 dtk (sebelum fix 6e803e7 ±5 mnt) |
+| 5.12 | Studio → booth → **Transaksi** | Dua sesi offline (Voucher, Tunai) dengan penanda **offline**, status selesai | ✅ 2026-11-25 voucher di UI; tunai 2N699SSM dicek di DB: completed, cash, Rp35.000, offline |
+| 5.13 | Studio → booth → **Voucher** | Voucher A: "Terpakai sesi <KODE> · offline" | ✅ 2026-11-25 |
+| 5.14 | Audit log: `select action, after from audit_logs where action='cash.approve' order by at desc limit 1;` | Ada; `amount`, `deviceId`, `offline: true` | ✅ 2026-11-25 amount 35000, deviceId, offline true, approvedWith booth_admin_pin |
 
 ### 5b. Konflik voucher dua perangkat (opsional, paket dengan ≥ 2 device)
 Kedua laptop offline, pakai voucher yang sama di keduanya → keduanya diterima lokal. Sambungkan

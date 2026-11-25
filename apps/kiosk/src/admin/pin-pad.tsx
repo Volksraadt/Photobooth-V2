@@ -4,6 +4,9 @@ import { useEffect, useState } from 'react';
 const MAX_ATTEMPTS = 5;
 const LOCKOUT_MS = 60_000;
 const PIN_MAX = 8;
+// New PINs are 6–8 digits (NEW_ADMIN_PIN_RE); legacy 4–5 digit PINs still verify. Showing only
+// 4 empty dots made operators think the PIN was 4 digits.
+const PIN_DOTS_MIN = 6;
 
 // Module-level so closing and reopening the pad does not reset the lockout.
 const guard = { failures: 0, lockedUntil: 0 };
@@ -28,7 +31,7 @@ export function PinPad({
   onSuccess,
   onCancel,
   title = 'PIN admin',
-  hint = 'Masukkan PIN 4–8 digit.',
+  hint = 'Masukkan PIN 6–8 digit.',
 }: {
   pinHash: string;
   /** Receives the verified PIN (cash approval re-checks it in the agent). */
@@ -106,7 +109,7 @@ export function PinPad({
           <p className={message ? 'sys-error' : 'sys-muted'}>{message ?? hint}</p>
         )}
         <div className="sys-dots" aria-label={`${pin.length} digit`}>
-          {Array.from({ length: Math.max(4, pin.length) }, (_, i) => (
+          {Array.from({ length: Math.max(PIN_DOTS_MIN, pin.length) }, (_, i) => (
             <span key={i} className={i < pin.length ? 'on' : ''} />
           ))}
         </div>
