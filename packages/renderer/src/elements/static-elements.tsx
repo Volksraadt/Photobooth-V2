@@ -5,7 +5,7 @@ import { useState } from 'react';
 import { useActionEnabled, useRenderer } from '../context';
 import { Placeholder } from '../placeholder';
 import { boxStyleToCss, pickTextStyle, textStyleToCss } from '../styles';
-import { resolveTextTokens } from '../tokens';
+import { paymentHint, resolveTextTokens } from '../tokens';
 
 const fill = { position: 'absolute', inset: 0 } as const;
 
@@ -29,13 +29,18 @@ export function ImageElementView({ el }: { el: ElementOf<'image'> }) {
 }
 
 export function TextElementView({ el }: { el: ElementOf<'text'> }) {
-  const { runtime, config } = useRenderer();
+  const { runtime, config, mode } = useRenderer();
   const text = resolveTextTokens(el.content, {
     price: runtime.price ?? config.pricing.basePrice,
     boothName: runtime.boothName ?? config.output.driveRootFolderName,
     date: runtime.now ?? new Date(),
     timezone: config.timezone,
     locale: config.locale,
+    paymentHint: paymentHint(
+      config.flow.paymentMethods,
+      !(mode === 'live' && runtime.qrisHidden),
+      config.locale,
+    ),
   });
   return (
     <div
@@ -108,13 +113,17 @@ export function VideoElementView({ el }: { el: ElementOf<'video'> }) {
 }
 
 export function ButtonElementView({ el }: { el: ElementOf<'button'> }) {
-  const { mode, onAction, resolveAsset } = useRenderer();
+  const { mode, onAction, resolveAsset, runtime } = useRenderer();
   const enabled = useActionEnabled(el.action);
   const [pressed, setPressed] = useState(false);
   const live = mode === 'live';
+  // QRIS cannot be used now (offline / Midtrans not set up): its button is not offered.
+  const qrisUnavailable =
+    live && runtime.qrisHidden && el.action.kind === 'selectPayment' && el.action.method === 'qris';
   const box = pressed && el.pressedStyle ? el.pressedStyle : el.style;
   const src = el.assetId ? resolveAsset(el.assetId) : undefined;
   const release = () => setPressed(false);
+  if (qrisUnavailable) return null;
   return (
     <button
       type="button"

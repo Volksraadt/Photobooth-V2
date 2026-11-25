@@ -22,6 +22,7 @@ export {
   formatMmSs,
   formatNumberId,
   formatPrice,
+  paymentHint,
   resolveTextTokens,
 } from './tokens';
 export { boxStyleToCss, textStyleToCss, RENDERER_CSS } from './styles';

@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest';
 import { filterMatrixValues } from './filter-view';
 import { computeFit, cropGuideRect } from './fit';
 import { qrPath } from './qr-code';
-import { formatIdr, formatMmSs, resolveTextTokens } from './tokens';
+import { formatIdr, formatMmSs, paymentHint, resolveTextTokens } from './tokens';
 
 describe('computeFit', () => {
   it('scales the artboard identically at 1920×1080 and 1366×768 (letterbox)', () => {
@@ -56,6 +56,25 @@ describe('tokens', () => {
       locale: 'id',
     });
     expect(out).toBe('Booth A · 25 November 2026 · Rp 35.000 · {{unknown}}');
+  });
+
+  it('{{paymentHint}} only mentions QRIS while it can be used', () => {
+    const all = ['qris', 'voucher', 'cash'] as const;
+    expect(paymentHint(all, true)).toBe(
+      'Scan QRIS dengan e-wallet atau m-banking, masukkan kode voucher, atau bayar tunai ke petugas.',
+    );
+    expect(paymentHint(all, false)).toBe('Masukkan kode voucher atau bayar tunai ke petugas.');
+    expect(paymentHint(['qris', 'voucher'], false)).toBe('Masukkan kode voucher.');
+    expect(paymentHint(['qris'], false)).toBe('Pembayaran belum tersedia. Hubungi petugas.');
+    expect(paymentHint(['cash'], true, 'en')).toBe('Pay cash to the staff.');
+    expect(
+      resolveTextTokens('{{paymentHint}}', {
+        date: new Date(),
+        timezone: 'Asia/Jakarta',
+        locale: 'id',
+        paymentHint: 'X',
+      }),
+    ).toBe('X');
   });
 
   it('formats the payment timer', () => {

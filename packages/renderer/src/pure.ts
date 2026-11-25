@@ -10,6 +10,7 @@ export {
   formatMmSs,
   formatNumberId,
   formatPrice,
+  paymentHint,
   resolveTextTokens,
   type TokenValues,
 } from './tokens';

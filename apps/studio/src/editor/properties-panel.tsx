@@ -646,7 +646,7 @@ function TextProps({ el, update }: { el: ElementOf<'text'>; update: Update }) {
         onCommit={(content) => update('isi', { content })}
       />
       <p className="text-[10px] text-muted-foreground">
-        Token: {'{{price}} {{boothName}} {{date}}'}
+        Token: {'{{price}} {{boothName}} {{date}} {{paymentHint}}'}
       </p>
       <TextStyleFields
         value={pickText(el)}

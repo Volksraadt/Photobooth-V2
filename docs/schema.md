@@ -124,7 +124,7 @@ type BoxStyle = {
 | `type` | Properti tambahan |
 |---|---|
 | `image` | `assetId`, `fit` |
-| `text` | `content`, `fontFamily`, `fontSize`, `fontWeight`, `color`, `align`, `lineHeight`, `letterSpacing`; mendukung token `{{price}}`, `{{boothName}}`, `{{date}}` |
+| `text` | `content`, `fontFamily`, `fontSize`, `fontWeight`, `color`, `align`, `lineHeight`, `letterSpacing`; mendukung token `{{price}}`, `{{boothName}}`, `{{date}}`, `{{paymentHint}}` (petunjuk bayar sesuai metode yang bisa dipakai saat itu: tanpa QRIS bila booth offline atau Midtrans belum diatur) |
 | `shape` | `shape: 'rect' \| 'ellipse' \| 'line'` |
 | `video` | `assetId`, `loop`, `muted` |
 | `button` | `action: ButtonAction`, `label?`, `assetId?` (tombol gambar), state `pressed` |

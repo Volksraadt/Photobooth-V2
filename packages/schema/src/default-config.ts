@@ -257,7 +257,7 @@ export function createDefaultBoothConfig(opts: CreateDefaultBoothConfigOptions):
         { format: 'idr', ...textStyle(72, { fontWeight: 800, align: 'left' }) },
       ),
       text(
-        'Scan QRIS dengan e-wallet atau m-banking, atau masukkan kode voucher.',
+        '{{paymentHint}}',
         { x: 960, y: 340, width: 700, height: 120 },
         34,
         { align: 'left', color: C.muted },
