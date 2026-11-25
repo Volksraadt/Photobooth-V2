@@ -1,5 +1,5 @@
 import { boothSessionCount, getBooth, getOrgPlan, listConfigVersions, listDevices } from '@pb/db';
-import { validateBoothConfig } from '@pb/schema';
+import { migrateBoothConfig } from '@pb/schema';
 import { Alert, Button, Card, CardContent, CardDescription, CardHeader, CardTitle } from '@pb/ui';
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
@@ -45,7 +45,8 @@ export default async function BoothPage({ params }: { params: Promise<{ boothId:
   const tz = row.booth.timezone;
 
   const config = row.draft?.config;
-  const validation = config ? validateBoothConfig(config) : null;
+  // Older drafts are upgraded to the current schemaVersion first (as the editor does).
+  const validation = config ? migrateBoothConfig(config) : null;
   const active = versions.find((v) => v.id === row.booth.activeConfigId);
   const activeDevices = devices.filter((d) => !d.revokedAt);
   const maxDevices = plan?.limits.maxDevicesPerBooth ?? null;

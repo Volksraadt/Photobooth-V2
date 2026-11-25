@@ -29,6 +29,7 @@ export const ELEMENT_ALLOWED_PAGES: Partial<Record<ElementType, readonly PageTyp
   'price-label': ['framePick', 'payment', 'review'],
   'payment-timer': ['payment'],
   'voucher-input': ['payment'],
+  'voucher-keypad': ['payment'],
   'download-qr': ['result'],
   progress: ['processing'],
   'print-copies': ['review'],
@@ -378,6 +379,14 @@ function checkSemantics(config: BoothConfig): ValidationIssue[] {
       case 'payment':
         if (methods.has('qris')) requireExactlyOne('qris', ' karena QRIS aktif');
         if (methods.has('voucher')) requireExactlyOne('voucher-input', ' karena voucher aktif');
+        // The keypad is optional (keyboard / barcode scanner work too), but one at most.
+        if (count('voucher-keypad') > 1) {
+          add(
+            `${type}.voucher-keypad.count`,
+            `${base}.elements`,
+            `Halaman ${label} hanya boleh punya satu elemen voucher-keypad (ditemukan ${count('voucher-keypad')}).`,
+          );
+        }
         break;
       case 'framePick':
         requireExactlyOne('frame-picker');

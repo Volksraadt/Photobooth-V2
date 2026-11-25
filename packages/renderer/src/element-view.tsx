@@ -15,6 +15,7 @@ import {
   ProgressElementView,
   QrisElementView,
   VoucherInputElementView,
+  VoucherKeypadElementView,
 } from './elements/data-elements';
 import {
   FilterPickerElementView,
@@ -62,6 +63,8 @@ function ElementBody({ element }: { element: Element }) {
       return <PaymentTimerElementView el={element} />;
     case 'voucher-input':
       return <VoucherInputElementView el={element} />;
+    case 'voucher-keypad':
+      return <VoucherKeypadElementView el={element} />;
     case 'download-qr':
       return <DownloadQrElementView el={element} />;
     case 'progress':

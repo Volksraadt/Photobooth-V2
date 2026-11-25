@@ -30,6 +30,7 @@ const KEEP_COLORS = new Set<Element['type']>([
   'qris',
   'download-qr',
   'voucher-input',
+  'voucher-keypad',
   'countdown',
   'camera-view',
 ]);

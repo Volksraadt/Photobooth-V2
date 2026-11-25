@@ -164,11 +164,24 @@ export const PaymentTimerElementSchema = BaseElementSchema.extend({
   trackColor: ColorSchema.optional(),
 });
 
+/**
+ * Voucher code entry. `field`: the code field only (schema v2; its keypad is a separate
+ * `voucher-keypad` element). `keypad`: field + 3×4 keypad drawn together in one box.
+ */
 export const VoucherInputElementSchema = BaseElementSchema.extend({
   type: z.literal('voucher-input'),
   variant: z.enum(['keypad', 'field']),
   textStyle: TextStyleSchema,
   keyStyle: BoxStyleSchema.optional(),
+});
+
+/** Phone-style 3×4 voucher keypad (1-2-3 / 4-5-6 / 7-8-9 / ⌫-0-✓), placed on its own. */
+export const VoucherKeypadElementSchema = BaseElementSchema.extend({
+  type: z.literal('voucher-keypad'),
+  textStyle: TextStyleSchema,
+  keyStyle: BoxStyleSchema.optional(),
+  /** Space between keys (artboard px). */
+  gap: NonNegative,
 });
 
 export const DownloadQrElementSchema = BaseElementSchema.extend({
@@ -207,6 +220,7 @@ export const ElementSchema = z.discriminatedUnion('type', [
   PriceLabelElementSchema,
   PaymentTimerElementSchema,
   VoucherInputElementSchema,
+  VoucherKeypadElementSchema,
   DownloadQrElementSchema,
   ProgressElementSchema,
   PrintCopiesElementSchema,

@@ -573,14 +573,45 @@ function TypeSection({ el, update }: { el: Element; update: Update }) {
             label="Gaya"
             value={el.variant}
             options={[
-              { value: 'field', label: 'Kolom' },
-              { value: 'keypad', label: 'Keypad' },
+              { value: 'field', label: 'Kolom saja' },
+              { value: 'keypad', label: 'Kolom + keypad (satu kotak)' },
             ]}
             onCommit={(variant) => update('gaya', { variant })}
+          />
+          {el.variant === 'field' && (
+            <p className="text-[11px] text-muted-foreground">
+              Tombol angka diatur terpisah lewat elemen Keypad voucher (+ Tambah elemen).
+            </p>
+          )}
+          <TextStyleFields
+            value={el.textStyle}
+            onChange={(textStyle) => update('teks', { textStyle })}
+          />
+          <BoxStyleFields
+            fillLabel="Isi kolom"
+            value={el.keyStyle}
+            onChange={(keyStyle) => update('gaya kolom', { keyStyle })}
+          />
+        </Section>
+      );
+    case 'voucher-keypad':
+      return (
+        <Section title="Keypad voucher">
+          <NumberField
+            label="Jarak tombol"
+            hint="Jarak antar tombol (px artboard)"
+            value={el.gap}
+            min={0}
+            onCommit={(gap) => update('jarak tombol', { gap })}
           />
           <TextStyleFields
             value={el.textStyle}
             onChange={(textStyle) => update('teks', { textStyle })}
+          />
+          <BoxStyleFields
+            fillLabel="Isi tombol"
+            value={el.keyStyle}
+            onChange={(keyStyle) => update('gaya tombol', { keyStyle })}
           />
         </Section>
       );

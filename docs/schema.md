@@ -151,7 +151,8 @@ type ButtonAction =
 | `qris` | payment | `padding`, `background`, `showLogo` |
 | `price-label` | framePick, payment, review | gaya teks (`TextStyle`); `format: 'idr' \| 'number'` |
 | `payment-timer` | payment | `variant: 'text' \| 'bar'`, `textStyle?`, `barColor?`, `trackColor?` |
-| `voucher-input` | payment | `variant: 'keypad' \| 'field'`, `textStyle`, `keyStyle?` |
+| `voucher-input` | payment | `variant: 'keypad' \| 'field'`, `textStyle`, `keyStyle?` (`field` = kolom kode saja sejak schema v2) |
+| `voucher-keypad` | payment | `textStyle`, `keyStyle?`, `gap` — keypad 3×4 terpisah (schema v2), maksimal satu per halaman |
 | `download-qr` | result | `padding`, `foreground`, `background` |
 | `progress` | processing | `variant: 'bar' \| 'spinner' \| 'steps'`, `color`, `trackColor?` |
 | `print-copies` | review | stepper jumlah cetak: `textStyle`, `buttonStyle?` |
@@ -160,7 +161,7 @@ type ButtonAction =
 
 **Validasi wajib di editor & saat publish:**
 - `capture`: tepat satu `camera-view`; jumlah `photo-slot` = jumlah slot terbanyak di frame aktif; satu `countdown`.
-- `payment`: satu `qris` jika `qris` aktif; `voucher-input` jika voucher aktif.
+- `payment`: satu `qris` jika `qris` aktif; `voucher-input` jika voucher aktif; `voucher-keypad` opsional, maksimal satu.
 - `framePick`: satu `frame-picker`.
 - `review`: `filter-picker` jika ada > 1 filter.
 - `result`: satu `download-qr`.
@@ -423,7 +424,7 @@ File `agent.sqlite` di folder data agent (Windows `%APPDATA%\photobooth-agent`, 
 - Kode voucher tidak pernah disimpan di agent; hanya hash (lihat B.9).
 
 ### A.7 Ketetapan F4 (renderer, tanpa perubahan schema)
-- `voucher-input` varian `keypad`: baris tampilan kode/status + keypad 3×4. Varian `field`: kolom setinggi `min(height, fontSize × 2,4)`; sisa tinggi kotak berisi keypad 3×4 ala telepon (1-2-3 / 4-5-6 / 7-8-9 / ⌫-0-✓; sejak 2026-11-25, sebelumnya 6×2), rata kiri, lebar tombol maks. 2,4 × tingginya, ukuran angka mengecil bila kotak pendek; tanpa keypad bila tinggi baris < 20 px (editor dan kiosk sama). Keduanya menerima keyboard/scanner di mode live. Kode ditampilkan `1234-5678` (8 digit sejak 2026-11-25). Bila kotak lebar dan pendek, keypad diletakkan di samping kolom (`data-pb-voucher-keypad="3x4-side"`). Status baru `needs_online` ("Voucher butuh internet") dan `locked` ("Terlalu banyak percobaan"). Di mode live, `voucher-input` dan tombol `selectPayment` untuk metode yang tidak aktif tidak digambar; di editor tampil redup.
+- (Schema v1; sejak v2 keypad varian `field` adalah elemen `voucher-keypad`, lihat A.8.) `voucher-input` varian `keypad`: baris tampilan kode/status + keypad 3×4. Varian `field`: kolom setinggi `min(height, fontSize × 2,4)`; sisa tinggi kotak berisi keypad 3×4 ala telepon (1-2-3 / 4-5-6 / 7-8-9 / ⌫-0-✓; sejak 2026-11-25, sebelumnya 6×2), rata kiri, lebar tombol maks. 2,4 × tingginya, ukuran angka mengecil bila kotak pendek; tanpa keypad bila tinggi baris < 20 px (editor dan kiosk sama). Keduanya menerima keyboard/scanner di mode live. Kode ditampilkan `1234-5678` (8 digit sejak 2026-11-25). Bila kotak lebar dan pendek, keypad diletakkan di samping kolom (`data-pb-voucher-keypad="3x4-side"`). Status baru `needs_online` ("Voucher butuh internet") dan `locked` ("Terlalu banyak percobaan"). Di mode live, `voucher-input` dan tombol `selectPayment` untuk metode yang tidak aktif tidak digambar; di editor tampil redup.
 - `qris` dan `payment-timer` tidak digambar di mode live bila `runtime.qrisHidden` (device offline atau QRIS tidak aktif).
 
 ### C.3 Ketetapan F5 (SQLite `user_version` 3)
@@ -443,3 +444,8 @@ File `agent.sqlite` di folder data agent (Windows `%APPDATA%\photobooth-agent`, 
 - Migrasi menandai voucher lama yang belum terpakai sebagai kedaluwarsa (`expires_at = now()`); tidak ada yang dihapus.
 - API membatasi kode salah per device: 10 per 10 menit (redeem online → 429 `too_many_attempts` + `retryAfterSec`; `voucherUses` dari outbox ditunda, tidak dibuang). Agent: hasil `locked` dan `needs_online`; meta SQLite `voucher.offlineAllowed`.
 
+### A.8 Schema v2: keypad voucher terpisah (2026-11-26)
+- `CURRENT_SCHEMA_VERSION` 1 → **2**. Elemen baru `voucher-keypad` (`textStyle`, `keyStyle?`, `gap`): 12 tombol 3×4 (1-2-3 / 4-5-6 / 7-8-9 / ⌫-0-✓) mengisi kotaknya, ukuran angka `min(fontSize, tinggi baris × 0,6)`, atribut `data-pb-voucher-keypad="3x4"`. Disembunyikan di Kiosk bila voucher tidak aktif, redup di editor.
+- `voucher-input` varian `field` kini hanya kolom kode (tinggi `min(height, fontSize × 2,4)`); varian `keypad` (kolom + keypad dalam satu kotak) tidak berubah. Keyboard/scanner tetap ditangani `voucher-input`.
+- Migrasi 1 → 2 (`migrate.ts`): setiap `voucher-input` `field` yang di v1 menggambar keypad dipecah menjadi kolom + `voucher-keypad` (id `<id>-keypad`) dengan geometri v1 persis (keypad di bawah atau di samping, celah 8 px, ukuran angka v1), dibulatkan 2 desimal. Kotak yang di v1 terlalu kecil untuk keypad tetap satu elemen. Config lama dimigrasi saat dibaca (editor, Kiosk, agent, worker, halaman booth Studio, rollback, kartu Pembayaran).
+- Template bawaan: kolom 700×96 di (960, 420) + keypad 440×248 di (960, 532).

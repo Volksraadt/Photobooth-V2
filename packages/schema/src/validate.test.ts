@@ -358,3 +358,37 @@ describe('payment methods switched off from the booth page', () => {
     expect(issuesOf(c)).toEqual([]);
   });
 });
+
+describe('migrate v1 → v2: voucher field and keypad become separate elements', () => {
+  const v1 = (box: { width: number; height: number }) => {
+    const c = JSON.parse(JSON.stringify(fresh())) as Omit<BoothConfig, 'schemaVersion'> & {
+      schemaVersion: number;
+    };
+    const els = c.pages.payment.elements.filter((e) => e.type !== 'voucher-keypad');
+    const field = els.find((e) => e.type === 'voucher-input')!;
+    Object.assign(field, { x: 960, y: 420, ...box });
+    c.pages.payment.elements = els;
+    c.schemaVersion = 1;
+    return c;
+  };
+
+  it('splits a wide, short v1 box into field + keypad beside it (same geometry as v1)', () => {
+    const r = migrateBoothConfig(v1({ width: 700, height: 280 }));
+    expect(r.success).toBe(true);
+    if (!r.success) return;
+    expect(r.config.schemaVersion).toBe(2);
+    const field = r.config.pages.payment.elements.find((e) => e.type === 'voucher-input')!;
+    const keypad = r.config.pages.payment.elements.find((e) => e.type === 'voucher-keypad')!;
+    // v1: fieldHeight = min(280, 40 × 2.4) = 96; side rows (280 − 24) / 4 = 64;
+    // keypad width = min(64 × 7.2 + 16, 700 × 0.55) = 385, beside the field.
+    expect(field).toMatchObject({ x: 960, y: 420, width: 700 - 385 - 8, height: 96 });
+    expect(keypad).toMatchObject({ x: 960 + 700 - 385, y: 420, width: 385, height: 280, gap: 8 });
+  });
+
+  it('keeps a field-only v1 box (too small for keys) as one element', () => {
+    const r = migrateBoothConfig(v1({ width: 700, height: 100 }));
+    expect(r.success).toBe(true);
+    if (!r.success) return;
+    expect(r.config.pages.payment.elements.some((e) => e.type === 'voucher-keypad')).toBe(false);
+  });
+});

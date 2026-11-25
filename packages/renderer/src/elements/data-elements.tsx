@@ -1,7 +1,7 @@
 'use client';
 
 import type { ElementOf } from '@pb/schema';
-import { useEffect, useState } from 'react';
+import { useEffect, useState, type CSSProperties } from 'react';
 import { useActionEnabled, useRenderer } from '../context';
 import { Pending } from '../placeholder';
 import { QrCode } from '../qr-code';
@@ -159,6 +159,80 @@ const KEYS: VoucherKey[] = [
 /** 12345678 → 1234-5678 (as printed on the voucher). */
 const groupCode = (code: string) => code.replace(/(\d{4})(?=\d)/g, '$1-');
 
+/** One voucher key: digits, ⌫, ✓ (pointer-down so a fast tap never misses). */
+function VoucherKeyButton({
+  k,
+  live,
+  onAction,
+  style,
+}: {
+  k: VoucherKey;
+  live: boolean;
+  onAction: (a: RendererAction) => void;
+  style: CSSProperties;
+}) {
+  return (
+    <div
+      role={live ? 'button' : undefined}
+      data-pb-voucher-key={k.label}
+      onPointerDown={
+        live
+          ? (e) => {
+              e.preventDefault();
+              onAction(k.action);
+            }
+          : undefined
+      }
+      style={{
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        background: '#ffffff',
+        borderRadius: 12,
+        cursor: live ? 'pointer' : undefined,
+        userSelect: 'none',
+        touchAction: 'manipulation',
+        ...style,
+      }}
+    >
+      {k.label}
+    </div>
+  );
+}
+
+/**
+ * Voucher keypad (schema v2): phone-style 3×4 keys filling the element box, placed and styled on
+ * its own. Digits shrink to fit short keys. Hidden on the kiosk when vouchers are switched off,
+ * dimmed in the editor.
+ */
+export function VoucherKeypadElementView({ el }: { el: ElementOf<'voucher-keypad'> }) {
+  const { config, mode, onAction } = useRenderer();
+  const live = mode === 'live';
+  const voucherOff = !config.flow.paymentMethods.includes('voucher');
+  if (live && voucherOff) return null;
+  const rowHeight = (el.height - el.gap * 3) / 4;
+  const fontSize = Math.max(1, Math.min(el.textStyle.fontSize, rowHeight * 0.6));
+  const keyStyle = { ...boxStyleToCss(el.keyStyle), ...textStyleToCss(el.textStyle), fontSize };
+  return (
+    <div
+      data-pb-voucher-keypad="3x4"
+      style={{
+        ...fill,
+        display: 'grid',
+        gridTemplateColumns: 'repeat(3, 1fr)',
+        gridTemplateRows: 'repeat(4, 1fr)',
+        gap: el.gap,
+        ...boxStyleToCss(el.style),
+        ...(voucherOff ? { opacity: 0.35 } : {}),
+      }}
+    >
+      {KEYS.map((k) => (
+        <VoucherKeyButton key={k.label} k={k} live={live} onAction={onAction} style={keyStyle} />
+      ))}
+    </div>
+  );
+}
+
 /**
  * Voucher entry (F4). Keypad: on-screen digits; both variants also accept a physical keyboard or
  * barcode scanner (digits, Backspace, Enter) while shown in live mode.
@@ -213,53 +287,18 @@ export function VoucherInputElementView({ el }: { el: ElementOf<'voucher-input'>
     ...(isError ? { boxShadow: `inset 0 0 0 3px ${ERROR_COLOR}` } : {}),
   } as const;
 
-  const keyView = (k: VoucherKey, fontSize?: number) => (
-    <div
+  const keyView = (k: VoucherKey) => (
+    <VoucherKeyButton
       key={k.label}
-      role={live ? 'button' : undefined}
-      data-pb-voucher-key={k.label}
-      onPointerDown={
-        live
-          ? (e) => {
-              e.preventDefault();
-              onAction(k.action);
-            }
-          : undefined
-      }
-      style={{
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        background: '#ffffff',
-        borderRadius: 12,
-        cursor: live ? 'pointer' : undefined,
-        userSelect: 'none',
-        touchAction: 'manipulation',
-        ...boxStyleToCss(el.keyStyle),
-        ...text,
-        ...(fontSize ? { fontSize } : {}),
-      }}
-    >
-      {k.label}
-    </div>
+      k={k}
+      live={live}
+      onAction={onAction}
+      style={{ ...boxStyleToCss(el.keyStyle), ...text }}
+    />
   );
 
   if (el.variant === 'field') {
-    const fieldHeight = Math.min(el.height, el.textStyle.fontSize * 2.4);
-    // Touch screens need keys: the element box holds a phone-style 3×4 keypad (same in the editor
-    // and on the kiosk). Below the field when the box is tall enough; beside it when the box is
-    // wide and short (bigger keys than squeezing 4 rows under the field). Keys are never wider
-    // than 2.4× their height; digits shrink to fit. Too small = keyboard / barcode scanner only.
-    const GAP = 8;
-    const stackedRow = (el.height - fieldHeight - GAP - GAP * 3) / 4;
-    const sideRow = (el.height - GAP * 3) / 4;
-    const sideKeypadWidth = Math.min(sideRow * 2.4 * 3 + GAP * 2, el.width * 0.55);
-    const side = sideRow > stackedRow * 1.15 && el.width - sideKeypadWidth - GAP >= fieldHeight * 3;
-    const rowHeight = side ? sideRow : stackedRow;
-    const hasKeypad = rowHeight >= 20;
-    const keypadWidth = side ? sideKeypadWidth : Math.min(el.width, rowHeight * 2.4 * 3 + GAP * 2);
-    const keypadHeight = rowHeight * 4 + GAP * 3;
-    const keyFont = Math.min(el.textStyle.fontSize, rowHeight * 0.6);
+    // Code field only (schema v2): the keypad is its own `voucher-keypad` element.
     return (
       <div
         data-pb-voucher
@@ -271,30 +310,13 @@ export function VoucherInputElementView({ el }: { el: ElementOf<'voucher-input'>
             ...fieldStyle,
             position: 'absolute',
             left: 0,
-            right: hasKeypad && side ? keypadWidth + GAP : 0,
+            right: 0,
             top: 0,
-            height: fieldHeight,
+            height: Math.min(el.height, el.textStyle.fontSize * 2.4),
           }}
         >
           {display}
         </div>
-        {hasKeypad && (
-          <div
-            data-pb-voucher-keypad={side ? '3x4-side' : '3x4'}
-            style={{
-              position: 'absolute',
-              ...(side ? { right: 0, top: 0 } : { left: 0, bottom: 0 }),
-              width: keypadWidth,
-              height: keypadHeight,
-              display: 'grid',
-              gridTemplateColumns: 'repeat(3, 1fr)',
-              gridTemplateRows: 'repeat(4, 1fr)',
-              gap: GAP,
-            }}
-          >
-            {KEYS.map((k) => keyView(k, keyFont))}
-          </div>
-        )}
       </div>
     );
   }

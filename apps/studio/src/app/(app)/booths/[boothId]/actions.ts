@@ -12,7 +12,11 @@ import {
   revokeDevice,
   saveDraft,
 } from '@pb/db';
-import { validateBoothConfig, type BoothConfig } from '@pb/schema';
+import { migrateBoothConfig, validateBoothConfig, type BoothConfig } from '@pb/schema';
+
+/** Stored configs may be of an older schemaVersion: upgrade before using them. */
+const upgraded = (config: unknown): BoothConfig =>
+  ((r) => (r.success ? r.config : (config as BoothConfig)))(migrateBoothConfig(config));
 import { revalidatePath } from 'next/cache';
 import { redirect } from 'next/navigation';
 import { apiFetch } from '@/lib/api';
@@ -35,7 +39,7 @@ export async function rollbackAction(_prev: FormState, form: FormData): Promise<
     const published = await asUser(user, async (tx) => {
       const old = await getConfigVersion(tx, boothId, version);
       if (!old) throw new Error(`Versi ${version} tidak ditemukan.`);
-      const valid = validateBoothConfig(old.config);
+      const valid = migrateBoothConfig(old.config);
       if (!valid.success)
         throw new Error(`Versi ${version} tidak valid lagi dan tidak bisa diaktifkan.`);
       const next = await publishConfig(tx, {
@@ -138,7 +142,7 @@ export async function savePaymentAction(_prev: FormState, form: FormData): Promi
         const active = versions.find((v) => v.id === row.booth.activeConfigId);
         const live = active ? await getConfigVersion(tx, boothId, active.version) : null;
         if (live) {
-          const next = validateBoothConfig(apply(live.config as BoothConfig));
+          const next = validateBoothConfig(apply(upgraded(live.config)));
           if (!next.success) throw new Error(issueText(next.issues));
           const p = await publishConfig(tx, { boothId, config: next.config, userId: user.id });
           published = p.version;
@@ -146,7 +150,7 @@ export async function savePaymentAction(_prev: FormState, form: FormData): Promi
         }
       }
       // The draft keeps its own design edits; only the payment fields change.
-      const draft = apply(row.draft.config as BoothConfig);
+      const draft = apply(upgraded(row.draft.config));
       if (published === null) {
         const check = validateBoothConfig(draft);
         if (!check.success) throw new Error(issueText(check.issues));

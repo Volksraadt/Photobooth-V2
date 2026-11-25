@@ -24,7 +24,8 @@ export const ELEMENT_LABEL: Record<ElementType, string> = {
   qris: 'QRIS',
   'price-label': 'Harga',
   'payment-timer': 'Timer pembayaran',
-  'voucher-input': 'Input voucher',
+  'voucher-input': 'Kolom voucher',
+  'voucher-keypad': 'Keypad voucher',
   'download-qr': 'QR unduh',
   progress: 'Progres',
   'print-copies': 'Jumlah cetak',
@@ -61,6 +62,7 @@ const SIZE: Record<ElementType, [number, number]> = {
   'price-label': [400, 90],
   'payment-timer': [400, 60],
   'voucher-input': [600, 100],
+  'voucher-keypad': [440, 248],
   'download-qr': [360, 360],
   progress: [800, 24],
   'print-copies': [400, 100],
@@ -178,6 +180,12 @@ export function createElement(
         variant: 'field',
         textStyle: defaultTextStyle(40, { color: '#0f172a' }),
         keyStyle: { fill: '#ffffff', borderRadius: 16 },
+      });
+    case 'voucher-keypad':
+      return make<'voucher-keypad'>({
+        textStyle: defaultTextStyle(34, { color: '#0f172a' }),
+        keyStyle: { fill: '#ffffff', borderRadius: 14 },
+        gap: 8,
       });
     case 'download-qr':
       return make<'download-qr'>({ padding: 24, foreground: '#000000', background: '#ffffff' });

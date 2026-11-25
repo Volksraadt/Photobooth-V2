@@ -256,20 +256,28 @@ export function createDefaultBoothConfig(opts: CreateDefaultBoothConfigOptions):
         { x: 960, y: 220, width: 700, height: 100 },
         { format: 'idr', ...textStyle(72, { fontWeight: 800, align: 'left' }) },
       ),
-      text(
-        '{{paymentHint}}',
-        { x: 960, y: 330, width: 700, height: 80 },
-        30,
-        { align: 'left', color: C.muted },
-      ),
+      text('{{paymentHint}}', { x: 960, y: 330, width: 700, height: 80 }, 30, {
+        align: 'left',
+        color: C.muted,
+      }),
       make(
         'voucher-input',
-        'Voucher',
-        { x: 960, y: 420, width: 700, height: 360 },
+        'Kolom voucher',
+        { x: 960, y: 420, width: 700, height: 96 },
         {
           variant: 'field',
           textStyle: textStyle(40, { color: C.dark }),
           keyStyle: { fill: '#ffffff', borderRadius: 16 },
+        },
+      ),
+      make(
+        'voucher-keypad',
+        'Keypad voucher',
+        { x: 960, y: 532, width: 440, height: 248 },
+        {
+          textStyle: textStyle(34, { color: C.dark }),
+          keyStyle: { fill: '#ffffff', borderRadius: 14 },
+          gap: 8,
         },
       ),
       button(
