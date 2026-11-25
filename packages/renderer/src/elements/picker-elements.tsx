@@ -9,6 +9,7 @@ import { Placeholder, SAMPLE_PHOTO_URL } from '../placeholder';
 import { filtersOf, framesOf, selectedFilter, selectedFrame } from '../selection';
 import { boxStyleToCss, textStyleToCss } from '../styles';
 import { formatIdr } from '../tokens';
+import { ScrollRow } from './scroll-row';
 
 const fill = { position: 'absolute', inset: 0 } as const;
 
@@ -73,67 +74,89 @@ export function FramePickerElementView({ el }: { el: ElementOf<'frame-picker'> }
   const itemHeight = carousel || rows <= 1 ? el.height : (el.height - el.gap) / 2;
   const pad = 16;
 
+  const items = frames.map((frame) => {
+    const thumb = resolveAsset(frame.thumbnailAssetId);
+    const price = frame.price ?? config.pricing.basePrice;
+    return (
+      <SelectableItem
+        key={frame.id}
+        testId={frame.id}
+        selected={frame.id === selectedId}
+        itemStyle={el.itemStyle}
+        selectedStyle={el.selectedStyle}
+        onSelect={
+          mode === 'live' ? () => onAction({ kind: 'selectFrame', frameId: frame.id }) : undefined
+        }
+        style={{
+          width: itemWidth,
+          height: itemHeight,
+          flex: 'none',
+          padding: pad,
+          scrollSnapAlign: 'start',
+        }}
+      >
+        <div style={{ position: 'relative', flex: 1, minHeight: 0 }}>
+          {thumb && (
+            <img
+              src={thumb}
+              alt={frame.name}
+              draggable={false}
+              style={{ width: '100%', height: '100%', objectFit: 'contain', display: 'block' }}
+            />
+          )}
+        </div>
+        {labelLines > 0 && (
+          <div
+            style={{
+              ...textStyleToCss(label),
+              marginTop: 8,
+              height: labelHeight * labelLines,
+              flex: 'none',
+              overflow: 'hidden',
+              whiteSpace: 'nowrap',
+              textOverflow: 'ellipsis',
+            }}
+          >
+            {el.showName && <div>{frame.name}</div>}
+            {el.showPrice && <div style={{ fontWeight: 700 }}>{formatIdr(price)}</div>}
+          </div>
+        )}
+      </SelectableItem>
+    );
+  });
+
+  if (carousel) {
+    return (
+      <div data-pb-frame-picker="carousel" style={fill}>
+        <ScrollRow
+          testId="frames"
+          interactive={mode === 'live'}
+          step={itemWidth + el.gap}
+          height={el.height}
+          arrowColor={label?.color}
+          style={{ gap: el.gap, ...boxStyleToCss(el.style) }}
+        >
+          {items}
+        </ScrollRow>
+      </div>
+    );
+  }
   return (
     <div
       data-pb-frame-picker
       style={{
         ...fill,
-        display: carousel ? 'flex' : 'grid',
-        gridTemplateColumns: carousel ? undefined : `repeat(${el.columns}, ${itemWidth}px)`,
-        gridAutoRows: carousel ? undefined : itemHeight,
+        display: 'grid',
+        gridTemplateColumns: `repeat(${el.columns}, ${itemWidth}px)`,
+        gridAutoRows: itemHeight,
         gap: el.gap,
-        overflowX: carousel ? 'auto' : 'hidden',
-        overflowY: carousel ? 'hidden' : 'auto',
+        overflowX: 'hidden',
+        overflowY: 'auto',
         scrollbarWidth: 'none',
         ...boxStyleToCss(el.style),
       }}
     >
-      {frames.map((frame) => {
-        const thumb = resolveAsset(frame.thumbnailAssetId);
-        const price = frame.price ?? config.pricing.basePrice;
-        return (
-          <SelectableItem
-            key={frame.id}
-            testId={frame.id}
-            selected={frame.id === selectedId}
-            itemStyle={el.itemStyle}
-            selectedStyle={el.selectedStyle}
-            onSelect={
-              mode === 'live'
-                ? () => onAction({ kind: 'selectFrame', frameId: frame.id })
-                : undefined
-            }
-            style={{ width: itemWidth, height: itemHeight, flex: 'none', padding: pad }}
-          >
-            <div style={{ position: 'relative', flex: 1, minHeight: 0 }}>
-              {thumb && (
-                <img
-                  src={thumb}
-                  alt={frame.name}
-                  draggable={false}
-                  style={{ width: '100%', height: '100%', objectFit: 'contain', display: 'block' }}
-                />
-              )}
-            </div>
-            {labelLines > 0 && (
-              <div
-                style={{
-                  ...textStyleToCss(label),
-                  marginTop: 8,
-                  height: labelHeight * labelLines,
-                  flex: 'none',
-                  overflow: 'hidden',
-                  whiteSpace: 'nowrap',
-                  textOverflow: 'ellipsis',
-                }}
-              >
-                {el.showName && <div>{frame.name}</div>}
-                {el.showPrice && <div style={{ fontWeight: 700 }}>{formatIdr(price)}</div>}
-              </div>
-            )}
-          </SelectableItem>
-        );
-      })}
+      {items}
     </div>
   );
 }
@@ -175,86 +198,103 @@ export function FilterPickerElementView({ el }: { el: ElementOf<'filter-picker'>
   const gap = Math.round(el.itemSize * 0.12);
   const radius = el.selectedStyle.borderRadius ?? 0;
 
+  const items = filters.map((filter) => {
+    const thumb = filter.thumbnailAssetId ? resolveAsset(filter.thumbnailAssetId) : undefined;
+    // Thumbnails already show the look; real/sample photos get the filter applied.
+    const src = firstShot ?? thumb ?? SAMPLE_PHOTO_URL;
+    const applyFilter = src !== thumb;
+    return (
+      <button
+        key={filter.id}
+        type="button"
+        data-pb-item={filter.id}
+        data-pb-selected={filter.id === selectedId ? 'true' : 'false'}
+        aria-pressed={filter.id === selectedId}
+        tabIndex={mode === 'live' ? 0 : -1}
+        onClick={
+          mode === 'live'
+            ? () => onAction({ kind: 'selectFilter', filterId: filter.id })
+            : undefined
+        }
+        style={{
+          flex: 'none',
+          width: el.itemSize,
+          height: el.itemSize + labelHeight,
+          display: 'flex',
+          flexDirection: 'column',
+          cursor: mode === 'live' ? 'pointer' : 'default',
+          scrollSnapAlign: 'start',
+        }}
+      >
+        <div
+          style={{
+            position: 'relative',
+            width: el.itemSize,
+            height: el.itemSize,
+            borderRadius: radius,
+            overflow: 'hidden',
+            flex: 'none',
+          }}
+        >
+          <FilteredImage
+            src={src}
+            params={applyFilter ? filter.params : null}
+            mirror={!!firstShot && runtime.mirrorShots}
+          />
+          {filter.id === selectedId && (
+            <div style={{ ...fill, pointerEvents: 'none', ...boxStyleToCss(el.selectedStyle) }} />
+          )}
+        </div>
+        {el.showLabel && (
+          <div
+            style={{
+              ...textStyleToCss(label),
+              marginTop: 8,
+              width: '100%',
+              whiteSpace: 'nowrap',
+              overflow: 'hidden',
+              textOverflow: 'ellipsis',
+            }}
+          >
+            {filter.name}
+          </div>
+        )}
+      </button>
+    );
+  });
+
+  if (el.layout === 'row') {
+    return (
+      <div data-pb-filter-picker="row" style={fill}>
+        <ScrollRow
+          testId="filters"
+          interactive={mode === 'live'}
+          step={el.itemSize + gap}
+          height={el.height}
+          arrowColor={label?.color}
+          style={{ gap, alignItems: 'flex-start', ...boxStyleToCss(el.style) }}
+        >
+          {items}
+        </ScrollRow>
+      </div>
+    );
+  }
   return (
     <div
       data-pb-filter-picker
       style={{
         ...fill,
         display: 'flex',
-        flexWrap: el.layout === 'grid' ? 'wrap' : 'nowrap',
+        flexWrap: 'wrap',
         alignContent: 'flex-start',
         gap,
-        overflowX: el.layout === 'row' ? 'auto' : 'hidden',
-        overflowY: el.layout === 'grid' ? 'auto' : 'hidden',
+        overflowX: 'hidden',
+        overflowY: 'auto',
         scrollbarWidth: 'none',
         ...boxStyleToCss(el.style),
       }}
     >
-      {filters.map((filter) => {
-        const thumb = filter.thumbnailAssetId ? resolveAsset(filter.thumbnailAssetId) : undefined;
-        // Thumbnails already show the look; real/sample photos get the filter applied.
-        const src = firstShot ?? thumb ?? SAMPLE_PHOTO_URL;
-        const applyFilter = src !== thumb;
-        return (
-          <button
-            key={filter.id}
-            type="button"
-            data-pb-item={filter.id}
-            data-pb-selected={filter.id === selectedId ? 'true' : 'false'}
-            aria-pressed={filter.id === selectedId}
-            tabIndex={mode === 'live' ? 0 : -1}
-            onClick={
-              mode === 'live'
-                ? () => onAction({ kind: 'selectFilter', filterId: filter.id })
-                : undefined
-            }
-            style={{
-              flex: 'none',
-              width: el.itemSize,
-              height: el.itemSize + labelHeight,
-              display: 'flex',
-              flexDirection: 'column',
-              cursor: mode === 'live' ? 'pointer' : 'default',
-            }}
-          >
-            <div
-              style={{
-                position: 'relative',
-                width: el.itemSize,
-                height: el.itemSize,
-                borderRadius: radius,
-                overflow: 'hidden',
-                flex: 'none',
-              }}
-            >
-              <FilteredImage
-                src={src}
-                params={applyFilter ? filter.params : null}
-                mirror={!!firstShot && runtime.mirrorShots}
-              />
-              {filter.id === selectedId && (
-                <div
-                  style={{ ...fill, pointerEvents: 'none', ...boxStyleToCss(el.selectedStyle) }}
-                />
-              )}
-            </div>
-            {el.showLabel && (
-              <div
-                style={{
-                  ...textStyleToCss(label),
-                  marginTop: 8,
-                  width: '100%',
-                  whiteSpace: 'nowrap',
-                  overflow: 'hidden',
-                  textOverflow: 'ellipsis',
-                }}
-              >
-                {filter.name}
-              </div>
-            )}
-          </button>
-        );
-      })}
+      {items}
     </div>
   );
 }
