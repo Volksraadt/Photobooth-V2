@@ -11,7 +11,8 @@ Tujuan: repo siap dikerjakan, schema dan database berdiri, owner bisa daftar dan
 - [ ] Supabase: proyek dev, auth email + Google, RLS per `org_id`.
   - [x] RLS per `org_id` (migrasi `0001_rls.sql`, diuji di `packages/db/src/rls.test.ts`).
   - [x] Kode auth email + Google mode Supabase di Studio + verifikasi token Supabase di API; `supabase/config.toml`.
-  - [ ] Membuat proyek Supabase dev dan menguji login email/Google terhadapnya: butuh akun owner (open-questions #12). Sementara `PB_AUTH_MODE=dev`.
+  - [x] Proyek Supabase dev (Singapura) + login email: 2026-11-25 daftar → konfirmasi e-mail → dashboard Studio; org + owner dibuat otomatis; API menerima token (ES256 via JWKS). Migrasi + seed lewat session pooler (port 5432); 25/25 tabel RLS; Data API dimatikan.
+  - [ ] Login Google terhadap proyek Supabase (open-questions #12).
 - [x] `apps/studio`: kerangka Next.js, login, buat organisasi, daftar booth, buat booth (pakai `createDefaultBoothConfig`).
 - [x] `apps/api`: kerangka Hono, health check, middleware auth device dan auth user.
 - [x] Util enkripsi AES-256-GCM untuk secret (`packages/db` atau `packages/crypto`).
