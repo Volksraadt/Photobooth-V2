@@ -18,16 +18,18 @@ const env = Object.fromEntries(
 const apiUrl = (process.argv[2] ?? 'https://GANTI-api.vercel.app').replace(/\/$/, '');
 const studioUrl = (process.argv[3] ?? 'https://GANTI-studio.vercel.app').replace(/\/$/, '');
 
-// Serverless: many short-lived instances → Supabase transaction pooler (port 6543), one client
-// each. `prepare` is turned off automatically for pooler.supabase.com hosts (packages/db).
-const dbUrl = (env.DATABASE_URL ?? '').replace(/(pooler\.supabase\.com):5432\b/, '$1:6543');
-if (!/pooler\.supabase\.com:6543/.test(dbUrl))
-  console.warn('[vercel-env] DATABASE_URL is not a Supabase pooler URL; check it by hand.');
+// Session pooler (port 5432), NOT the transaction pooler (6543): postgres.js pipelines concurrent
+// queries on one connection, and Supavisor transaction mode hangs on that (server stuck in
+// ClientRead, seen 2026-11-26). Idle connections close after 2 s on Vercel (packages/db), so a
+// small pool per instance stays within the session pooler's client limit.
+const dbUrl = (env.DATABASE_URL ?? '').replace(/(pooler\.supabase\.com):6543\b/, '$1:5432');
+if (!/pooler\.supabase\.com:5432/.test(dbUrl))
+  console.warn('[vercel-env] DATABASE_URL is not a Supabase session pooler URL; check it by hand.');
 
 const pick = (keys) => keys.filter((k) => env[k]).map((k) => [k, env[k]]);
 const common = [
   ['DATABASE_URL', dbUrl],
-  ['PB_DB_POOL_MAX', '1'],
+  ['PB_DB_POOL_MAX', '3'],
   ['PB_LOCAL_DB', '0'],
   ['PB_AUTH_MODE', 'supabase'],
   ...pick(['NEXT_PUBLIC_SUPABASE_URL', 'NEXT_PUBLIC_SUPABASE_ANON_KEY', 'PB_PLATFORM_ADMINS']),

@@ -35,7 +35,7 @@ Paket **Hobby hanya untuk pemakaian non-komersial**. Uji coba sendiri boleh; beg
    `node scripts/vercel-env.mjs https://<api>.vercel.app https://<studio>.vercel.app`
    lalu tempel isi `.data/vercel/api.env` ke proyek api dan `.data/vercel/studio.env` ke proyek studio (Settings → Environment Variables → *Import .env*, environment Production). Redeploy keduanya.
    - Rahasia (master key, service role, Google secret, Midtrans platform) **hanya** di proyek api.
-   - `DATABASE_URL` memakai transaction pooler Supabase (port 6543) dan `PB_DB_POOL_MAX=1`.
+   - `DATABASE_URL` memakai **session pooler** Supabase (port 5432, sama seperti dev) dan `PB_DB_POOL_MAX=3`. Jangan transaction pooler 6543: postgres.js + Supavisor mode transaksi menggantung saat query berjalan bersamaan.
 5. **Supabase → Authentication → URL Configuration**: *Site URL* `https://<studio>.vercel.app`; tambah *Redirect URL* `https://<studio>.vercel.app/auth/callback`.
 6. **Google Cloud → OAuth client `photobooth-api-dev`**: tambah *Authorized redirect URI* `https://<api>.vercel.app/oauth/google/callback`.
 7. **Midtrans (sandbox)**: Notification URL owner `https://<api>.vercel.app/webhooks/midtrans/<orgId>` (salin dari Studio → Integrasi), billing platform `https://<api>.vercel.app/webhooks/billing`. Tidak perlu tunnel lagi.
