@@ -8,11 +8,11 @@ Tujuan: repo siap dikerjakan, schema dan database berdiri, owner bisa daftar dan
 - [x] `packages/schema`: semua tipe di `docs/schema.md` bagian A sebagai zod schema + type export; fungsi `validateBoothConfig()` termasuk aturan validasi per halaman.
 - [x] `packages/schema`: fungsi `createDefaultBoothConfig()` menghasilkan config lengkap yang valid (desain sederhana default, 1 frame 4 slot, 3 filter).
 - [x] `packages/db`: Drizzle schema untuk tabel B.1–B.5, migrasi awal, seed (3 plan, 1 org demo, 1 booth demo).
-- [ ] Supabase: proyek dev, auth email + Google, RLS per `org_id`.
+- [x] Supabase: proyek dev, auth email + Google, RLS per `org_id`.
   - [x] RLS per `org_id` (migrasi `0001_rls.sql`, diuji di `packages/db/src/rls.test.ts`).
   - [x] Kode auth email + Google mode Supabase di Studio + verifikasi token Supabase di API; `supabase/config.toml`.
   - [x] Proyek Supabase dev (Singapura) + login email: 2026-11-25 daftar → konfirmasi e-mail → dashboard Studio; org + owner dibuat otomatis; API menerima token (ES256 via JWKS). Migrasi + seed lewat session pooler (port 5432); 25/25 tabel RLS; Data API dimatikan.
-  - [ ] Login Google terhadap proyek Supabase (open-questions #12).
+  - [x] Login Google terhadap proyek Supabase: 2026-11-25 lolos (OAuth client Google yang sama dengan Drive + redirect `https://<ref>.supabase.co/auth/v1/callback`); e-mail yang sama tertaut ke user yang sama (identitas email + google).
 - [x] `apps/studio`: kerangka Next.js, login, buat organisasi, daftar booth, buat booth (pakai `createDefaultBoothConfig`).
 - [x] `apps/api`: kerangka Hono, health check, middleware auth device dan auth user.
 - [x] Util enkripsi AES-256-GCM untuk secret (`packages/db` atau `packages/crypto`).
