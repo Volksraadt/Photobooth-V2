@@ -26,6 +26,10 @@
     "start": "tsx src/index.ts",
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "lint": "eslint src",
-    "test": "vitest run"
+    "test": "vitest run",
+    "build:vercel": "node scripts/build-vercel.mjs"
+  },
+  "devDependencies": {
+    "esbuild": "^0.25.12"
   }
 }
