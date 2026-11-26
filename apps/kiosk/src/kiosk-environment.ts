@@ -4,6 +4,8 @@ import { useEffect } from 'react';
  * Booth hardening in the browser. Tauri (later) does fullscreen/sleep natively; these keep the
  * browser build usable as a kiosk too.
  */
+const CURSOR_IDLE_MS = 3000;
+
 export function useKioskEnvironment(enabled: boolean): void {
   // Keep the screen awake (Screen Wake Lock API); re-acquire after the tab becomes visible again.
   useEffect(() => {
@@ -38,11 +40,26 @@ export function useKioskEnvironment(enabled: boolean): void {
       }
     };
     const preventMenu = (e: Event) => e.preventDefault();
+    // The cursor stays hidden for touch, but shows while a mouse is used (testing, or a booth
+    // without a touchscreen) and hides again after a few seconds without movement.
+    let hideTimer: ReturnType<typeof setTimeout> | undefined;
+    const hideCursor = () => root.classList.remove('pb-cursor-visible');
+    const onPointer = (e: PointerEvent) => {
+      clearTimeout(hideTimer);
+      if (e.pointerType !== 'mouse') return hideCursor();
+      root.classList.add('pb-cursor-visible');
+      hideTimer = setTimeout(hideCursor, CURSOR_IDLE_MS);
+    };
     window.addEventListener('pointerdown', enterFullscreen, true);
+    window.addEventListener('pointermove', onPointer, true);
+    window.addEventListener('pointerdown', onPointer, true);
     window.addEventListener('contextmenu', preventMenu);
     return () => {
-      root.classList.remove('pb-kiosk-mode');
+      clearTimeout(hideTimer);
+      root.classList.remove('pb-kiosk-mode', 'pb-cursor-visible');
       window.removeEventListener('pointerdown', enterFullscreen, true);
+      window.removeEventListener('pointermove', onPointer, true);
+      window.removeEventListener('pointerdown', onPointer, true);
       window.removeEventListener('contextmenu', preventMenu);
     };
   }, [enabled]);

@@ -20,8 +20,9 @@ body {
   touch-action: pan-x pan-y;
 }
 
-.pb-kiosk-mode,
-.pb-kiosk-mode * {
+/* Hidden for touch; shown while a mouse moves (see kiosk-environment.ts). */
+.pb-kiosk-mode:not(.pb-cursor-visible),
+.pb-kiosk-mode:not(.pb-cursor-visible) * {
   cursor: none !important;
 }
 
