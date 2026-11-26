@@ -34,10 +34,14 @@ export function readSettings(search = window.location.search): KioskSettings {
   const capture = q.get('capture') ?? env.VITE_CAPTURE ?? '';
   const source = q.get('source') ?? env.VITE_CONFIG_SOURCE ?? (env.DEV ? 'file' : 'agent');
   const agent = q.get('agent') ?? env.VITE_AGENT_URL ?? 'http://127.0.0.1:47810';
+  // A real booth (`pnpm booth`) runs the Vite dev server too, but buyers must never see the dev
+  // overlay ("Simulasikan lunas" skips payment) and the kiosk hardening must be on.
+  const booth = env.VITE_BOOTH === '1';
+  const devBuild = env.DEV && !booth;
   return {
     capture: capture === 'mock' || capture === 'webcam' || capture === 'tablet' ? capture : null,
-    dev: flag(q.get('dev'), env.DEV),
-    kiosk: flag(q.get('kiosk'), !env.DEV),
+    dev: flag(q.get('dev'), devBuild),
+    kiosk: flag(q.get('kiosk'), !devBuild),
     source: source === 'agent' || source === 'api' ? 'agent' : 'file',
     configUrl: q.get('config') ?? env.VITE_CONFIG_URL ?? '/booth-config.json',
     agentUrl: agent === '0' || agent === 'off' ? null : agent.replace(/\/$/, ''),

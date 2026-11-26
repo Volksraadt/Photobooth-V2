@@ -34,6 +34,8 @@ const env = {
   // kiosk (Vite)
   VITE_SHORT_LINK_BASE: api,
   VITE_CONFIG_SOURCE: 'agent',
+  // Buyers must not see the dev overlay ("Simulasikan lunas"); fullscreen + hidden cursor on.
+  VITE_BOOTH: '1',
 };
 
 console.log(`[booth] API ${api} · Kiosk http://localhost:5173`);
