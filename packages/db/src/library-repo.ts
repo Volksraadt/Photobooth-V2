@@ -7,7 +7,8 @@ export type LibraryFrameRow = typeof libraryFrames.$inferSelect;
 
 /**
  * Platform frame library. Owners read published frames through RLS (Tx); platform admins manage
- * the library through the API with the privileged connection (Db).
+ * the library through the API with the privileged connection (Db); admins are the e-mails in
+ * PB_PLATFORM_ADMINS (set in both the API and the Studio deployment).
  */
 export async function listLibraryFrames(tx: Tx): Promise<LibraryFrameRow[]> {
   return tx
