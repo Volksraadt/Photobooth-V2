@@ -1110,6 +1110,8 @@ function FrameProps() {
             a &&
             setFrame('Overlay', (f, d) => {
               f.overlayAssetId = a.id;
+              // The picker draws the frame design itself; keep the legacy field in step.
+              f.thumbnailAssetId = a.id;
               ensureAssetRef(d, a);
             })
           }
@@ -1125,18 +1127,6 @@ function FrameProps() {
                 f.underlayAssetId = a.id;
                 ensureAssetRef(d, a);
               } else delete f.underlayAssetId;
-            })
-          }
-        />
-        <AssetField
-          label="Thumbnail"
-          kind="image"
-          value={frame.thumbnailAssetId}
-          onPick={(a) =>
-            a &&
-            setFrame('Thumbnail', (f, d) => {
-              f.thumbnailAssetId = a.id;
-              ensureAssetRef(d, a);
             })
           }
         />

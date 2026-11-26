@@ -5,6 +5,7 @@ import type { CSSProperties, ReactNode } from 'react';
 import { useRenderer } from '../context';
 import { FilteredImage } from '../filter-view';
 import { FrameComposite } from '../frame-composite';
+import type { RuntimePhoto } from '../types';
 import { Placeholder, SAMPLE_PHOTO_URL } from '../placeholder';
 import { filtersOf, framesOf, selectedFilter, selectedFrame } from '../selection';
 import { boxStyleToCss, textStyleToCss } from '../styles';
@@ -57,7 +58,7 @@ function SelectableItem({
 }
 
 export function FramePickerElementView({ el }: { el: ElementOf<'frame-picker'> }) {
-  const { config, runtime, mode, onAction, resolveAsset } = useRenderer();
+  const { config, runtime, mode, onAction } = useRenderer();
   const frames = framesOf(config, runtime);
   const selectedId = mode === 'editor' ? frames[0]?.id : runtime.selectedFrameId;
   if (frames.length === 0) {
@@ -74,8 +75,17 @@ export function FramePickerElementView({ el }: { el: ElementOf<'frame-picker'> }
   const itemHeight = carousel || rows <= 1 ? el.height : (el.height - el.gap) / 2;
   const pad = 16;
 
+  const thumbWidth = Math.max(1, itemWidth - pad * 2);
+  const thumbHeight = Math.max(
+    1,
+    itemHeight - pad * 2 - (labelLines > 0 ? 8 + labelHeight * labelLines : 0),
+  );
   const items = frames.map((frame) => {
-    const thumb = resolveAsset(frame.thumbnailAssetId);
+    // The thumbnail is the frame design itself (underlay, sample photos, overlay, dynamic
+    // elements), so owners never maintain a separate thumbnail image.
+    const samples: Partial<Record<number, RuntimePhoto>> = Object.fromEntries(
+      frame.slots.map((s) => [s.index, { url: SAMPLE_PHOTO_URL }]),
+    );
     const price = frame.price ?? config.pricing.basePrice;
     return (
       <SelectableItem
@@ -96,14 +106,21 @@ export function FramePickerElementView({ el }: { el: ElementOf<'frame-picker'> }
         }}
       >
         <div style={{ position: 'relative', flex: 1, minHeight: 0 }}>
-          {thumb && (
-            <img
-              src={thumb}
-              alt={frame.name}
-              draggable={false}
-              style={{ width: '100%', height: '100%', objectFit: 'contain', display: 'block' }}
+          <div
+            role="img"
+            aria-label={frame.name}
+            data-pb-frame-thumb={frame.id}
+            style={{ position: 'absolute', inset: 0, pointerEvents: 'none' }}
+          >
+            <FrameComposite
+              frame={frame}
+              width={thumbWidth}
+              height={thumbHeight}
+              fit="contain"
+              shots={samples}
+              showSlotPlaceholders={false}
             />
-          )}
+          </div>
         </div>
         {labelLines > 0 && (
           <div
