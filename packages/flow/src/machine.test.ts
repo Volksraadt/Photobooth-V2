@@ -612,3 +612,18 @@ describe('F4: payment methods + offline', () => {
     expect(h.calls.payments).toBe(0);
   });
 });
+
+describe('sessionTotal', () => {
+  it('free (event mode) sessions do not count the frame price, only extra prints', async () => {
+    const { sessionTotal } = await import('./helpers');
+    const { createDefaultBoothConfig } = await import('@pb/schema');
+    const config = createDefaultBoothConfig({ boothId: 'b' });
+    config.pricing.extraPrintPrice = 5000;
+    const frameId = config.frames[0]!.id;
+    const base = { frameId, extraPrints: 1 } as Parameters<typeof sessionTotal>[1];
+    expect(sessionTotal(config, { ...base!, free: false })).toBe(
+      (config.frames[0]!.price ?? config.pricing.basePrice) + 5000,
+    );
+    expect(sessionTotal(config, { ...base!, free: true })).toBe(5000);
+  });
+});

@@ -24,12 +24,11 @@ export function paymentAmount(config: BoothConfig, session: FlowSession | null):
   return framePrice(config, session?.frameId ?? null);
 }
 
-/** Frame price + extra prints bought at Review. */
+/** Frame price (0 for free / event-mode sessions) + extra prints bought at Review. */
 export function sessionTotal(config: BoothConfig, session: FlowSession | null): number {
   const extra = session?.extraPrints ?? 0;
-  return (
-    framePrice(config, session?.frameId ?? null) + extra * (config.pricing.extraPrintPrice ?? 0)
-  );
+  const frame = session?.free ? 0 : framePrice(config, session?.frameId ?? null);
+  return frame + extra * (config.pricing.extraPrintPrice ?? 0);
 }
 
 /** Sheets to print (1 sheet = 2 strips). */
