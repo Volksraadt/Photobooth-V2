@@ -192,7 +192,25 @@ describe('PageRenderer', () => {
       expect(photos).toHaveLength(4);
       expect((photos[0] as HTMLImageElement).style.filter).toMatch(/^url\("?#pb-f/);
       expect(preview.querySelector('feColorMatrix')).not.toBeNull();
-      expect(q(container, '[data-pb-print-copies]')!.dataset.pbPrintCopies).toBe('2');
+    });
+
+    it('framePick: extra prints stepper; read-only when it cannot change', () => {
+      const onAction = vi.fn();
+      const { container } = renderPage('framePick', {
+        onAction,
+        runtime: { printSheets: 2, canAction: (a) => a.kind === 'addPrint' },
+      });
+      const copies = q(container, '[data-pb-print-copies]')!;
+      expect(copies.dataset.pbPrintCopies).toBe('2');
+      fireEvent.click(q(copies, '[data-pb-action="addPrint"]')!);
+      expect(onAction).toHaveBeenCalledWith({ kind: 'addPrint' });
+
+      const locked = renderPage('framePick', {
+        runtime: { printSheets: 1, canAction: () => false },
+      });
+      const ro = q(locked.container, '[data-pb-print-copies]')!;
+      expect(ro.querySelector('[data-pb-action]')).toBeNull();
+      expect(ro.textContent).toBe('1');
     });
 
     it('payment: QRIS and timer', () => {

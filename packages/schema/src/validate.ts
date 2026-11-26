@@ -32,7 +32,8 @@ export const ELEMENT_ALLOWED_PAGES: Partial<Record<ElementType, readonly PageTyp
   'voucher-keypad': ['payment'],
   'download-qr': ['result'],
   progress: ['processing'],
-  'print-copies': ['review'],
+  // Bought on Pilih Frame (paid at Payment); on Review it only shows the sheet count.
+  'print-copies': ['framePick', 'review'],
 };
 
 const FRAME_DYNAMIC_TYPES: readonly ElementType[] = ['text', 'image', 'shape', 'download-qr'];

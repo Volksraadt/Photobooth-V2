@@ -475,6 +475,8 @@ export function PrintCopiesElementView({ el }: { el: ElementOf<'print-copies'> }
   const canRemove = useActionEnabled(remove);
   const size = el.height;
   const live = mode === 'live';
+  // Live, when the count cannot change (e.g. Review, after payment): just the number of sheets.
+  const readOnly = live && !canAdd && !canRemove;
   const stepper = (action: RendererAction, enabled: boolean, label: string, glyph: string) => (
     <button
       type="button"
@@ -511,9 +513,9 @@ export function PrintCopiesElementView({ el }: { el: ElementOf<'print-copies'> }
         ...boxStyleToCss(el.style),
       }}
     >
-      {stepper(remove, canRemove, 'Kurangi cetak', '−')}
+      {!readOnly && stepper(remove, canRemove, 'Kurangi cetak', '−')}
       <div style={{ ...textStyleToCss(el.textStyle), flex: 1 }}>{value}</div>
-      {stepper(add, canAdd, 'Tambah cetak', '+')}
+      {!readOnly && stepper(add, canAdd, 'Tambah cetak', '+')}
     </div>
   );
 }

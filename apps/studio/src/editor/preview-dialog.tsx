@@ -5,7 +5,6 @@ import {
   flowMachine,
   paymentAmount,
   printSheets,
-  sessionTotal,
   uiActionToEvent,
   type CaptureShotInput,
   type FlowEvent,
@@ -164,7 +163,7 @@ function PreviewPlayer({
   });
   const runtime: RenderRuntime = {
     boothName,
-    price: page === 'review' ? sessionTotal(config, session) : paymentAmount(config, session),
+    price: paymentAmount(config, session),
     slideIndex: ctx.slideIndex,
     camera: { stream },
     activeSlotIndex: ctx.activeSlot,

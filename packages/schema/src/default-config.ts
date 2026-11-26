@@ -215,7 +215,7 @@ export function createDefaultBoothConfig(opts: CreateDefaultBoothConfigOptions):
       make(
         'frame-picker',
         'Daftar frame',
-        { x: 160, y: 200, width: 1600, height: 620 },
+        { x: 160, y: 190, width: 1600, height: 560 },
         {
           layout: 'grid',
           columns: 4,
@@ -225,6 +225,16 @@ export function createDefaultBoothConfig(opts: CreateDefaultBoothConfigOptions):
           showPrice: true,
           showName: true,
           labelStyle: textStyle(28),
+        },
+      ),
+      text('Jumlah cetak', { x: 560, y: 775, width: 300, height: 70 }, 34, { align: 'right' }),
+      make(
+        'print-copies',
+        'Jumlah cetak',
+        { x: 900, y: 770, width: 400, height: 80 },
+        {
+          textStyle: textStyle(44, { fontWeight: 700 }),
+          buttonStyle: { fill: C.panel, borderRadius: 999 },
         },
       ),
       button('Kembali', { kind: 'back' }, { x: 160, y: 880, width: 320, height: 110 }, secondary),
@@ -353,22 +363,7 @@ export function createDefaultBoothConfig(opts: CreateDefaultBoothConfigOptions):
           labelStyle: textStyle(28),
         },
       ),
-      text('Cetak tambahan', { x: 560, y: 580, width: 500, height: 60 }, 36, { align: 'left' }),
-      make(
-        'print-copies',
-        'Jumlah cetak',
-        { x: 560, y: 650, width: 500, height: 110 },
-        {
-          textStyle: textStyle(48, { fontWeight: 700 }),
-          buttonStyle: { fill: C.panel, borderRadius: 999 },
-        },
-      ),
-      make(
-        'price-label',
-        'Total',
-        { x: 1160, y: 660, width: 600, height: 90 },
-        { format: 'idr', ...textStyle(56, { fontWeight: 700, align: 'right' }) },
-      ),
+
       button('Cetak', { kind: 'confirm' }, { x: 1360, y: 880, width: 400, height: 110 }),
     ]),
     processing: page('processing', [

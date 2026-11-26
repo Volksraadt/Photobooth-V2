@@ -456,3 +456,8 @@ File `agent.sqlite` di folder data agent (Windows `%APPDATA%\photobooth-agent`, 
 - `0009_assets_bucket`: bucket Supabase Storage publik `assets` + policy `storage.objects`: anggota org membaca/menulis/menimpa hanya di folder `<org_id>/…`. Dilewati di database tanpa Supabase Storage (PGlite tes).
 - Frame dari pustaka yang dipakai booth disalin ke config: `AssetRef` dengan id `lib-<libraryFrameId>` (url, sha256, bytes) + slot. Bentuk `BoothConfig` tidak berubah, tanpa migrasi config.
 
+### A.9 Cetak tambahan dibeli sebelum Pembayaran (2026-11-26)
+-  boleh di halaman  dan . Tambah/kurangi hanya aktif di Pilih Frame; di Review (sudah dibayar) elemen hanya menampilkan jumlah lembar, tanpa tombol.
+- Nominal Pembayaran (QRIS, voucher, tunai) = harga frame + cetak tambahan × . Mode event: tidak ada cetak tambahan, harga frame 0.
+- Template bawaan:  + label di Pilih Frame (daftar frame 1600×560 di y 190); Review tanpa jumlah cetak dan total. Bentuk config tidak berubah (tanpa migrasi); booth lama yang menjual cetak tambahan tanpa  di Pilih Frame mendapat peringatan saat publish dan tidak menjual cetak tambahan.
+

@@ -19,12 +19,12 @@ export function framePrice(config: BoothConfig, frameId: string | null): number 
   return findFrame(config, frameId)?.price ?? config.pricing.basePrice;
 }
 
-/** Amount charged at Payment (frame price). */
+/** Amount charged at Payment: frame price + extra prints chosen on Pilih Frame. */
 export function paymentAmount(config: BoothConfig, session: FlowSession | null): number {
-  return framePrice(config, session?.frameId ?? null);
+  return sessionTotal(config, session);
 }
 
-/** Frame price (0 for free / event-mode sessions) + extra prints bought at Review. */
+/** Frame price (0 for free / event-mode sessions) + extra prints chosen before Payment. */
 export function sessionTotal(config: BoothConfig, session: FlowSession | null): number {
   const extra = session?.extraPrints ?? 0;
   const frame = session?.free ? 0 : framePrice(config, session?.frameId ?? null);

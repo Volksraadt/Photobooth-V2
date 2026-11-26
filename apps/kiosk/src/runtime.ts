@@ -1,7 +1,6 @@
 import {
   paymentAmount,
   printSheets,
-  sessionTotal,
   uiActionToEvent,
   type FlowSnapshot,
 } from '@pb/flow';
@@ -24,7 +23,7 @@ export function buildRuntime(snapshot: FlowSnapshot, camera: CameraRuntime): Ren
 
   return {
     boothName: config.output.driveRootFolderName,
-    price: page === 'review' ? sessionTotal(config, session) : paymentAmount(config, session),
+    price: paymentAmount(config, session),
     slideIndex: context.slideIndex,
     camera,
     activeSlotIndex: context.activeSlot,

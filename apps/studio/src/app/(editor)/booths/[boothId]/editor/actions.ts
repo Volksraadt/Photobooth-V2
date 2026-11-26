@@ -13,6 +13,7 @@ import {
 } from '@pb/schema';
 import { revalidatePath } from 'next/cache';
 import { asUser, requireOrg } from '@/lib/org';
+import { extraPrintsWarning } from '@/lib/print-warning';
 import { qrisSetupWarning } from '@/lib/qris-warning';
 
 /** Assets must come from the platform's storage (the cloud worker fetches them; see T1 audit). */
@@ -78,7 +79,8 @@ export async function publishPreflightAction(boothId: string, config: unknown): 
     const parsed = BoothConfigSchema.safeParse(upgradeIncoming(config));
     if (!parsed.success || parsed.data.boothId !== boothId) return [];
     const qris = await qrisSetupWarning(org.id, parsed.data);
-    return qris ? [qris] : [];
+    const prints = extraPrintsWarning(parsed.data);
+    return [qris, prints].filter((w): w is string => !!w);
   } catch {
     return [];
   }

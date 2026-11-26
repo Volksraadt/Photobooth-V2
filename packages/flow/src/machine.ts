@@ -239,6 +239,8 @@ export const flowMachine = setup({
       context.session.shots.every((s, i) => s === null || retakeAllowed(context, i + 1)),
     canAddPrint: ({ context }) =>
       context.config.pricing.extraPrintPrice !== null &&
+      // Event mode is free: nothing could collect the money for extra sheets.
+      !context.config.flow.eventMode &&
       (context.session?.extraPrints ?? 0) < context.config.pricing.maxExtraPrints,
     canRemovePrint: ({ context }) => (context.session?.extraPrints ?? 0) > 0,
     unpaid: ({ context }) => !context.session?.paid,
@@ -475,6 +477,24 @@ export const flowMachine = setup({
           guard: 'validFrame',
           actions: assign(({ context, event }) => ({
             session: updateSession(context, { frameId: event.frameId }),
+          })),
+        },
+        // Extra prints are chosen before Payment so they are paid with the frame (open-questions
+        // #16): Review only shows the number of sheets.
+        ADD_PRINT: {
+          guard: 'canAddPrint',
+          actions: assign(({ context }) => ({
+            session: updateSession(context, {
+              extraPrints: (context.session?.extraPrints ?? 0) + 1,
+            }),
+          })),
+        },
+        REMOVE_PRINT: {
+          guard: 'canRemovePrint',
+          actions: assign(({ context }) => ({
+            session: updateSession(context, {
+              extraPrints: (context.session?.extraPrints ?? 0) - 1,
+            }),
           })),
         },
         NEXT: [
@@ -811,22 +831,6 @@ export const flowMachine = setup({
           guard: 'validFilter',
           actions: assign(({ context, event }) => ({
             session: updateSession(context, { filterId: event.filterId }),
-          })),
-        },
-        ADD_PRINT: {
-          guard: 'canAddPrint',
-          actions: assign(({ context }) => ({
-            session: updateSession(context, {
-              extraPrints: (context.session?.extraPrints ?? 0) + 1,
-            }),
-          })),
-        },
-        REMOVE_PRINT: {
-          guard: 'canRemovePrint',
-          actions: assign(({ context }) => ({
-            session: updateSession(context, {
-              extraPrints: (context.session?.extraPrints ?? 0) - 1,
-            }),
           })),
         },
         CONFIRM: 'processing',

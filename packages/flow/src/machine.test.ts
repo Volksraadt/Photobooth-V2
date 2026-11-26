@@ -175,8 +175,9 @@ describe('flow machine', () => {
     const filterId = config.filters[1]!.id;
     h.send({ type: 'SELECT_FILTER', filterId });
     expect(h.state().context.session!.filterId).toBe(filterId);
+    // Extra prints are bought on Pilih Frame (before Payment), not at Review.
     h.send({ type: 'ADD_PRINT' });
-    expect(h.state().context.session!.extraPrints).toBe(1);
+    expect(h.state().context.session!.extraPrints).toBe(0);
 
     h.send({ type: 'CONFIRM' });
     expect(h.state().value).toBe('processing');
@@ -625,5 +626,40 @@ describe('sessionTotal', () => {
       (config.frames[0]!.price ?? config.pricing.basePrice) + 5000,
     );
     expect(sessionTotal(config, { ...base!, free: true })).toBe(5000);
+  });
+});
+
+describe('extra prints (chosen on Pilih Frame, paid at Payment)', () => {
+  it('adds the extra sheets to the QRIS amount; event mode sells none', async () => {
+    const h = start(
+      makeConfig((c) => {
+        c.pricing.extraPrintPrice = 5000;
+        c.pricing.maxExtraPrints = 2;
+      }),
+    );
+    h.send({ type: 'START' });
+    await h.tick(60_000);
+    expect(h.state().value).toBe('framePick');
+    h.send({ type: 'ADD_PRINT' });
+    h.send({ type: 'ADD_PRINT' });
+    h.send({ type: 'ADD_PRINT' });
+    expect(h.state().context.session!.extraPrints).toBe(2);
+    h.send({ type: 'REMOVE_PRINT' });
+    const frame = h.state().context.config.frames[0]!;
+    const price = frame.price ?? h.state().context.config.pricing.basePrice;
+    h.send({ type: 'NEXT' });
+    await h.tick(10);
+    expect(h.state().context.session!.qrString).toBe(`QR-${price + 5000}`);
+
+    const free = start(
+      makeConfig((c) => {
+        c.pricing.extraPrintPrice = 5000;
+        c.flow.eventMode = true;
+      }),
+    );
+    free.send({ type: 'START' });
+    await free.tick(60_000);
+    free.send({ type: 'ADD_PRINT' });
+    expect(free.state().context.session!.extraPrints).toBe(0);
   });
 });
