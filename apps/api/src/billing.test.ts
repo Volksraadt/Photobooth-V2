@@ -17,6 +17,7 @@ import {
   setPlanPrice,
   withUserContext,
   listLibraryFrames,
+  listTemplates,
   type Db,
 } from '@pb/db';
 import { createTestDb, createTestUser, seedPlans } from '@pb/db/testing';
@@ -535,5 +536,57 @@ describe('platform frame library', () => {
     expect(del.status).toBe(200);
     const list = await json(await call('/admin/library-frames', { token: adminToken }));
     expect(list.frames.map((f: { id: string }) => f.id)).not.toContain(frame.id);
+  });
+});
+
+describe('booth templates (platform admin)', () => {
+  it('saves a booth design as a template that new booths start from', async () => {
+    const orgId = await newOrg('Template Source');
+    const booth = await withUserContext(db, userId, (tx) =>
+      createBoothFromTemplate(tx, { orgId, name: 'Sumber', timezone: 'Asia/Jakarta', userId }),
+    );
+    const save = (token: string, over: Record<string, unknown> = {}) =>
+      call('/admin/templates', {
+        method: 'POST',
+        token,
+        body: JSON.stringify({ boothId: booth.id, name: 'Pesta Pantai', ...over }),
+      });
+    expect((await save(userToken)).status).toBe(403);
+    expect((await save(adminToken, { boothId: 'nope' })).status).toBe(404);
+    const created = await save(adminToken, { description: 'Biru cerah' });
+    expect(created.status).toBe(201);
+    const { template } = await json(created);
+
+    const visible = await withUserContext(db, userId, (tx) => listTemplates(tx));
+    const stored = visible.find((t) => t.id === template.id)!;
+    expect(stored).toMatchObject({ name: 'Pesta Pantai', description: 'Biru cerah' });
+    expect(stored.config).toMatchObject({ boothId: 'template', configVersion: 0 });
+
+    const otherOrg = await newOrg('Template User');
+    const copy = await withUserContext(db, userId, (tx) =>
+      createBoothFromTemplate(tx, {
+        orgId: otherOrg,
+        name: 'Booth Baru',
+        timezone: 'Asia/Makassar',
+        userId,
+        templateId: template.id,
+      }),
+    );
+    expect(copy.id).not.toBe(booth.id);
+
+    const hide = await call(`/admin/templates/${template.id}`, {
+      method: 'PATCH',
+      token: adminToken,
+      body: JSON.stringify({ isPublic: false }),
+    });
+    expect((await json(hide)).template.isPublic).toBe(false);
+    expect(
+      (await withUserContext(db, userId, (tx) => listTemplates(tx))).map((t) => t.id),
+    ).not.toContain(template.id);
+    const del = await call(`/admin/templates/${template.id}`, {
+      method: 'DELETE',
+      token: adminToken,
+    });
+    expect(del.status).toBe(200);
   });
 });

@@ -122,3 +122,17 @@ export function instantiateTemplate(
   config.admin = { pinHash: '' };
   return config;
 }
+
+/**
+ * Turn a booth's design into a reusable template (Admin → "Simpan sebagai template"): drops what
+ * belongs to that booth (id, version, admin PIN, Drive folder name). Assets stay as-is: they are
+ * public URLs in platform storage, readable by every org.
+ */
+export function templateFromBooth(config: BoothConfig): BoothConfig {
+  const t = JSON.parse(JSON.stringify(config)) as BoothConfig;
+  t.boothId = 'template';
+  t.configVersion = 0;
+  t.admin = { pinHash: '' };
+  t.output.driveRootFolderName = '{{boothName}}';
+  return t;
+}

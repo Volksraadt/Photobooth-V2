@@ -5,11 +5,13 @@ import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { ConfirmSubmit } from '@/components/confirm-submit';
 import { idr, METHOD_LABEL } from '@/lib/format';
+import { isPlatformAdmin } from '@/lib/entitlements';
 import { asUser, requireOrg } from '@/lib/org';
 import { timezoneLabel } from '@/lib/timezones';
 import { revokeDeviceAction } from './actions';
 import { BoothLifecycle, PairDeviceForm, PaymentForm, RollbackButton } from './booth-forms';
 import { PagePreviews } from './page-previews';
+import { SaveTemplateForm } from './save-template-form';
 
 const ONLINE_MS = 2 * 60 * 1000;
 const nowMs = () => Date.now();
@@ -306,6 +308,10 @@ export default async function BoothPage({ params }: { params: Promise<{ boothId:
           )}
         </CardContent>
       </Card>
+
+      {isPlatformAdmin(user) && validation?.success && (
+        <SaveTemplateForm boothId={boothId} boothName={row.booth.name} />
+      )}
 
       {canEdit && (
         <Card>

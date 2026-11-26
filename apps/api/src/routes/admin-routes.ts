@@ -1,5 +1,11 @@
 import {
   adminDeleteLibraryFrame,
+  adminDeleteTemplate,
+  adminGetBoothDraft,
+  adminInsertTemplate,
+  adminListTemplates,
+  adminUpdateTemplate,
+  type AdminTemplateRow,
   adminInsertLibraryFrame,
   adminListLibraryFrames,
   adminListOrgs,
@@ -11,7 +17,14 @@ import {
   adminUpdateLibraryFrame,
   type LibraryFrameRow,
 } from '@pb/db';
-import { assetUrlPrefixesFromEnv, isAllowedAssetUrl, PhotoSlotSchema } from '@pb/schema';
+import {
+  assetUrlPrefixesFromEnv,
+  disallowedAssetIds,
+  isAllowedAssetUrl,
+  migrateBoothConfig,
+  PhotoSlotSchema,
+  templateFromBooth,
+} from '@pb/schema';
 import { Hono } from 'hono';
 import { createMiddleware } from 'hono/factory';
 import { z } from 'zod';
@@ -68,6 +81,25 @@ const libraryFrameJson = (r: LibraryFrameRow) => ({
   ...r,
   createdAt: r.createdAt.toISOString(),
   updatedAt: r.updatedAt.toISOString(),
+});
+
+const TemplateBody = z.object({
+  boothId: z.string().min(1).max(64),
+  name: z.string().trim().min(1).max(80),
+  description: z.string().trim().max(200).nullable().optional(),
+  isPublic: z.boolean().optional(),
+});
+const TemplatePatch = z
+  .object({
+    name: z.string().trim().min(1).max(80),
+    description: z.string().trim().max(200).nullable(),
+    isPublic: z.boolean(),
+  })
+  .partial();
+const templateJson = (t: AdminTemplateRow) => ({
+  ...t,
+  createdAt: t.createdAt.toISOString(),
+  updatedAt: t.updatedAt.toISOString(),
 });
 
 const PriceBody = z.object({ priceMonthly: z.number().int().min(0).max(100_000_000).nullable() });
@@ -167,6 +199,67 @@ export function adminRoutes() {
   app.delete('/library-frames/:id', async (c) => {
     const ok = await adminDeleteLibraryFrame(c.var.deps.db, c.req.param('id'));
     if (!ok) return c.json({ error: 'not_found', message: 'Frame tidak ditemukan.' }, 404);
+    return c.json({ ok: true });
+  });
+
+  // --- Booth templates: "Simpan sebagai template" from any booth --------------------------------
+
+  app.get('/templates', async (c) => {
+    const rows = await adminListTemplates(c.var.deps.db);
+    return c.json({ templates: rows.map(templateJson) });
+  });
+
+  app.post('/templates', async (c) => {
+    const body = TemplateBody.safeParse(await c.req.json().catch(() => null));
+    if (!body.success)
+      return c.json({ error: 'invalid_body', message: 'Data template tidak valid.' }, 400);
+    const draft = await adminGetBoothDraft(c.var.deps.db, body.data.boothId);
+    if (!draft) return c.json({ error: 'not_found', message: 'Booth tidak ditemukan.' }, 404);
+    const valid = migrateBoothConfig(draft.config);
+    if (!valid.success) {
+      return c.json(
+        {
+          error: 'invalid_design',
+          message: `Desain booth belum valid: ${valid.issues
+            .slice(0, 3)
+            .map((i) => i.message)
+            .join('; ')}`,
+        },
+        400,
+      );
+    }
+    if (disallowedAssetIds(valid.config, assetUrlPrefixesFromEnv(process.env)).length)
+      return c.json(
+        { error: 'invalid_assets', message: 'Desain memakai aset di luar penyimpanan platform.' },
+        400,
+      );
+    const row = await adminInsertTemplate(c.var.deps.db, {
+      name: body.data.name,
+      description: body.data.description ?? null,
+      config: templateFromBooth(valid.config),
+      isPublic: body.data.isPublic ?? true,
+    });
+    return c.json({ template: templateJson(row) }, 201);
+  });
+
+  app.patch('/templates/:id', async (c) => {
+    const body = TemplatePatch.safeParse(await c.req.json().catch(() => null));
+    if (!body.success)
+      return c.json({ error: 'invalid_body', message: 'Data template tidak valid.' }, 400);
+    const row = await adminUpdateTemplate(c.var.deps.db, c.req.param('id'), body.data);
+    if (!row) return c.json({ error: 'not_found', message: 'Template tidak ditemukan.' }, 404);
+    return c.json({ template: templateJson(row) });
+  });
+
+  app.delete('/templates/:id', async (c) => {
+    const result = await adminDeleteTemplate(c.var.deps.db, c.req.param('id'));
+    if (result === 'not_found')
+      return c.json({ error: 'not_found', message: 'Template tidak ditemukan.' }, 404);
+    if (result === 'builtin')
+      return c.json(
+        { error: 'builtin', message: 'Template bawaan tidak bisa dihapus; sembunyikan saja.' },
+        400,
+      );
     return c.json({ ok: true });
   });
 

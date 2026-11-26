@@ -1,6 +1,6 @@
-import type { PhotoSlot } from '@pb/schema';
+import type { BoothConfig, PhotoSlot } from '@pb/schema';
 import { asc, eq } from 'drizzle-orm';
-import { libraryFrames } from './schema';
+import { boothDrafts, booths, libraryFrames, templates } from './schema';
 import type { Db, Tx } from './types';
 
 export type LibraryFrameRow = typeof libraryFrames.$inferSelect;
@@ -69,4 +69,76 @@ export async function adminUpdateLibraryFrame(
 export async function adminDeleteLibraryFrame(db: Db, id: string): Promise<boolean> {
   const rows = await db.delete(libraryFrames).where(eq(libraryFrames.id, id)).returning();
   return rows.length > 0;
+}
+
+// --- Booth templates (platform admin) -------------------------------------------------------
+
+export type AdminTemplateRow = {
+  id: string;
+  key: string | null;
+  name: string;
+  description: string | null;
+  isPublic: boolean;
+  createdAt: Date;
+  updatedAt: Date;
+};
+
+const templateSummary = {
+  id: templates.id,
+  key: templates.key,
+  name: templates.name,
+  description: templates.description,
+  isPublic: templates.isPublic,
+  createdAt: templates.createdAt,
+  updatedAt: templates.updatedAt,
+};
+
+export async function adminListTemplates(db: Db): Promise<AdminTemplateRow[]> {
+  return db.select(templateSummary).from(templates).orderBy(asc(templates.name));
+}
+
+/** A booth's current draft (any org: platform admin only). */
+export async function adminGetBoothDraft(
+  db: Db,
+  boothId: string,
+): Promise<{ name: string; config: unknown } | null> {
+  const [row] = await db
+    .select({ name: booths.name, config: boothDrafts.config })
+    .from(boothDrafts)
+    .innerJoin(booths, eq(booths.id, boothDrafts.boothId))
+    .where(eq(boothDrafts.boothId, boothId));
+  return row ?? null;
+}
+
+export async function adminInsertTemplate(
+  db: Db,
+  input: { name: string; description: string | null; config: BoothConfig; isPublic: boolean },
+): Promise<AdminTemplateRow> {
+  const [row] = await db.insert(templates).values(input).returning(templateSummary);
+  return row!;
+}
+
+export async function adminUpdateTemplate(
+  db: Db,
+  id: string,
+  patch: Partial<{ name: string; description: string | null; isPublic: boolean }>,
+): Promise<AdminTemplateRow | null> {
+  const [row] = await db
+    .update(templates)
+    .set({ ...patch, updatedAt: new Date() })
+    .where(eq(templates.id, id))
+    .returning(templateSummary);
+  return row ?? null;
+}
+
+/** Only templates saved from booths; built-in ones (with a key) come back on every seed. */
+export async function adminDeleteTemplate(
+  db: Db,
+  id: string,
+): Promise<'deleted' | 'builtin' | 'not_found'> {
+  const [row] = await db.select({ key: templates.key }).from(templates).where(eq(templates.id, id));
+  if (!row) return 'not_found';
+  if (row.key) return 'builtin';
+  await db.delete(templates).where(eq(templates.id, id));
+  return 'deleted';
 }

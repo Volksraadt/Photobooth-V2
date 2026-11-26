@@ -8,7 +8,7 @@ import {
   listTemplates,
   listUploadQueue,
 } from '@pb/db';
-import type { BoothConfig } from '@pb/schema';
+import { upgradeBoothConfig, type BoothConfig } from '@pb/schema';
 import { Alert, Card, CardContent, CardDescription, CardHeader, CardTitle } from '@pb/ui';
 import Link from 'next/link';
 import { OrgOverview, type OverviewData } from '@/components/org-overview';
@@ -181,7 +181,11 @@ export default async function BoothsPage({
             ) : (
               <CreateBoothForm
                 defaultTimezone="Asia/Jakarta"
-                templates={templates.map((t) => ({ ...t, config: t.config as BoothConfig }))}
+                templates={templates.map((t) => {
+                  // Templates seeded before a schema upgrade are drawn in the current shape.
+                  const up = upgradeBoothConfig(t.config);
+                  return { ...t, config: (up.success ? up.config : t.config) as BoothConfig };
+                })}
               />
             )}
           </CardContent>

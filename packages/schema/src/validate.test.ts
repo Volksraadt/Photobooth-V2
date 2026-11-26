@@ -328,6 +328,26 @@ describe('built-in templates', () => {
   });
 });
 
+describe('booth → template', () => {
+  it('strips what belongs to the booth and instantiates again', async () => {
+    const { instantiateTemplate, templateFromBooth } = await import('./templates');
+    const booth = createDefaultBoothConfig({ boothId: 'b1', boothName: 'Booth Asli' });
+    booth.configVersion = 7;
+    booth.admin = { pinHash: 'x'.repeat(10) };
+    const t = templateFromBooth(booth);
+    expect(t).toMatchObject({ boothId: 'template', configVersion: 0, admin: { pinHash: '' } });
+    expect(t.output.driveRootFolderName).toBe('{{boothName}}');
+    expect(booth.boothId).toBe('b1');
+    const again = instantiateTemplate(t, {
+      boothId: 'b2',
+      boothName: 'Baru',
+      timezone: 'Asia/Jakarta',
+    });
+    expect(validateBoothConfig(again).success).toBe(true);
+    expect(again.output.driveRootFolderName).toBe('Baru');
+  });
+});
+
 describe('asset references', () => {
   it('finds asset ids incl. fonts and prunes unused refs', async () => {
     const { pruneUnusedAssets, referencedAssetIds } = await import('./asset-refs');

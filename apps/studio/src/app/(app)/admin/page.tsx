@@ -54,6 +54,11 @@ export default async function AdminPage() {
               Pustaka frame
             </Link>
           </Button>
+          <Button asChild variant="outline">
+            <Link href="/admin/templates" data-testid="admin-templates">
+              Template booth
+            </Link>
+          </Button>
           <form action={runLifecycleAction}>
             <Button type="submit" variant="outline" data-testid="run-lifecycle">
               Jalankan siklus langganan sekarang

@@ -4,6 +4,7 @@ import {
   createDefaultBoothConfig,
   instantiateTemplate,
   pruneUnusedAssets,
+  upgradeBoothConfig,
   type BoothConfig,
 } from '@pb/schema';
 import { and, asc, count, desc, eq, isNull, max, sql } from 'drizzle-orm';
@@ -88,7 +89,10 @@ export async function createBoothFromTemplate(
       .from(templates)
       .where(eq(templates.id, input.templateId));
     if (!t) throw new Error('Template tidak ditemukan');
-    config = instantiateTemplate(t.config as BoothConfig, {
+    // Stored templates may be of an older schemaVersion (seeded before an upgrade).
+    const upgraded = upgradeBoothConfig(t.config);
+    const stored = (upgraded.success ? upgraded.config : t.config) as BoothConfig;
+    config = instantiateTemplate(stored, {
       boothId: id,
       boothName: name,
       timezone: input.timezone,
