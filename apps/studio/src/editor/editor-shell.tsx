@@ -1,7 +1,7 @@
 'use client';
 
 import { validateBoothConfig, type BoothConfig, type ValidationIssue } from '@pb/schema';
-import { cn } from '@pb/ui';
+import { Button, cn } from '@pb/ui';
 import Link from 'next/link';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useAutosave, type SaveDraftFn, type SaveStatus } from './autosave';
@@ -16,6 +16,19 @@ import {
   type EditorEnv,
   type LibraryFrameItem,
 } from './editor-context';
+import {
+  ArrowLeftIcon,
+  AlertIcon,
+  CheckIcon,
+  CloseIcon,
+  EyeIcon,
+  FitIcon,
+  GridIcon,
+  MinusIcon,
+  PlusIcon,
+  RedoIcon,
+  UndoIcon,
+} from '@/components/icons';
 import { IconButton } from './fields';
 import { FiltersView } from './filters-view';
 import { PAGE_LABEL } from './labels';
@@ -156,7 +169,12 @@ function EditorLayout({
             canvasPanel ? 'w-52 border-r lg:w-60' : 'border-b lg:w-60 lg:border-b-0 lg:border-r',
           )}
         >
-          <nav className="grid grid-cols-4 border-b text-[11px]" data-testid="panel-tabs">
+          <nav
+            className="grid grid-cols-4 border-b text-xs"
+            role="tablist"
+            aria-label="Panel editor"
+            data-testid="panel-tabs"
+          >
             {(
               [
                 ['design', 'Desain'],
@@ -168,11 +186,15 @@ function EditorLayout({
               <button
                 key={p}
                 type="button"
+                role="tab"
+                aria-selected={panel === p}
                 data-testid={`tab-${p}`}
                 onClick={() => setPanel(p)}
                 className={cn(
-                  'py-2 hover:bg-accent',
-                  panel === p && 'border-b-2 border-primary font-semibold',
+                  'relative py-2.5 font-medium transition-colors after:absolute after:inset-x-3 after:bottom-0 after:h-0.5 after:rounded-full focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring',
+                  panel === p
+                    ? 'text-foreground after:bg-primary'
+                    : 'text-muted-foreground after:bg-transparent hover:text-foreground',
                 )}
               >
                 {label}
@@ -228,14 +250,9 @@ function EditorLayout({
           >
             <div className="flex items-center justify-between border-b px-3 py-2 lg:hidden">
               <span className="text-xs font-semibold">Properti</span>
-              <button
-                type="button"
-                className="rounded px-2 text-sm hover:bg-accent"
-                aria-label="Tutup panel properti"
-                onClick={() => setPropsOpen(false)}
-              >
-                ✕
-              </button>
+              <IconButton title="Tutup panel properti" onClick={() => setPropsOpen(false)}>
+                <CloseIcon className="size-4" />
+              </IconButton>
             </div>
             <fieldset disabled={!env.canEdit}>
               <PropertiesPanel />
@@ -266,12 +283,22 @@ function SaveBadge({ status }: { status: SaveStatus }) {
       data-testid="save-status"
       data-state={status.state}
       className={cn(
-        'text-xs',
+        'inline-flex items-center gap-1.5 text-xs',
         status.state === 'error' ? 'text-destructive' : 'text-muted-foreground',
         // Narrow toolbar: only show the badge when there is something to report.
         status.state === 'saved' && 'max-lg:sr-only',
       )}
     >
+      <span
+        aria-hidden
+        className={cn(
+          'size-1.5 rounded-full',
+          status.state === 'saved' && 'bg-success',
+          status.state === 'dirty' && 'bg-warning',
+          status.state === 'saving' && 'animate-pulse bg-muted-foreground',
+          status.state === 'error' && 'bg-destructive',
+        )}
+      />
       {text}
     </span>
   );
@@ -346,12 +373,14 @@ function Toolbar({
 
   const count = issues.all.length;
   return (
-    <header className="relative flex h-12 shrink-0 items-center gap-2 border-b bg-background px-3">
+    <header className="relative flex h-14 shrink-0 items-center gap-1.5 border-b bg-background px-3 lg:gap-2">
       <Link
         href={`/booths/${env.boothId}`}
-        className="text-sm text-muted-foreground hover:underline"
+        aria-label="Kembali ke halaman booth"
+        title="Kembali ke halaman booth"
+        className="inline-flex size-8 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
       >
-        ←
+        <ArrowLeftIcon className="size-4" />
       </Link>
       <span
         className="min-w-[3rem] max-w-24 shrink truncate text-sm font-semibold lg:max-w-48"
@@ -366,7 +395,7 @@ function Toolbar({
         disabled={!canUndo}
         onClick={() => store.undo()}
       >
-        ↶
+        <UndoIcon className="size-4" />
       </IconButton>
       <IconButton
         title={redoLabel ? `Redo: ${redoLabel} (Ctrl+Shift+Z)` : 'Redo'}
@@ -374,24 +403,24 @@ function Toolbar({
         disabled={!canRedo}
         onClick={() => store.redo()}
       >
-        ↷
+        <RedoIcon className="size-4" />
       </IconButton>
       <div className="mx-1 h-6 w-px bg-border lg:mx-2" />
       <IconButton title="Perkecil" onClick={() => store.setUi({ zoom: clampZoom(zoom / 1.2) })}>
-        −
+        <MinusIcon className="size-4" />
       </IconButton>
       <span className="w-12 text-center text-xs tabular-nums" data-testid="zoom-level">
         {Math.round(zoom * 100)}%
       </span>
       <IconButton title="Perbesar" onClick={() => store.setUi({ zoom: clampZoom(zoom * 1.2) })}>
-        +
+        <PlusIcon className="size-4" />
       </IconButton>
       <IconButton
         title="Pas layar (Ctrl+0)"
         testId="zoom-fit"
         onClick={() => window.dispatchEvent(new Event('pb-editor-fit'))}
       >
-        Fit
+        <FitIcon className="size-4" />
       </IconButton>
       <span className="max-md:hidden">
         <IconButton
@@ -409,7 +438,7 @@ function Toolbar({
           testId="snap-grid"
           onClick={() => store.setUi({ snapToGrid: !snap })}
         >
-          Grid
+          <GridIcon className="size-4" />
         </IconButton>
       </span>
       <div className="ml-auto flex items-center gap-2 lg:gap-3">
@@ -421,7 +450,7 @@ function Toolbar({
             aria-pressed={propsToggle.open}
             onClick={propsToggle.toggle}
             className={cn(
-              'relative h-8 rounded border px-2 text-xs hover:bg-accent lg:hidden',
+              'relative h-8 rounded-md border border-input px-2.5 text-xs font-medium shadow-xs hover:bg-accent lg:hidden',
               propsToggle.open && 'bg-accent',
             )}
           >
@@ -434,72 +463,77 @@ function Toolbar({
         <button
           type="button"
           data-testid="issues-button"
+          aria-expanded={showIssues}
           onClick={() => setShowIssues((s) => !s)}
           className={cn(
-            'rounded px-2 py-1 text-xs',
-            count ? 'bg-destructive/10 text-destructive' : 'text-emerald-700',
+            'inline-flex h-7 items-center gap-1 rounded-full border px-2.5 text-xs font-medium transition-colors',
+            count
+              ? 'border-destructive/20 bg-destructive-soft text-destructive hover:bg-destructive/15'
+              : 'border-success/20 bg-success-soft text-success hover:bg-success/15',
           )}
         >
+          {count ? <AlertIcon className="size-3.5" /> : <CheckIcon className="size-3.5" />}
           {count ? `${count} masalah` : 'Valid'}
         </button>
-        <button
+        <Button
           type="button"
+          variant="outline"
           data-testid="preview-button"
-          className="h-8 rounded border px-3 text-xs hover:bg-accent"
+          className="h-8 px-3 text-xs"
           onClick={onPreview}
         >
+          <EyeIcon className="max-sm:hidden" />
           Pratinjau
-        </button>
+        </Button>
         {env.canEdit && (
-          <button
+          <Button
             type="button"
             data-testid="publish-button"
-            disabled={publishing}
-            className="h-8 rounded bg-primary px-3 text-xs font-medium text-primary-foreground disabled:opacity-60"
+            loading={publishing}
+            className="h-8 px-3.5 text-xs"
             onClick={() => void doPublish()}
           >
             {publishing ? 'Mempublikasikan…' : 'Publish'}
-          </button>
+          </Button>
         )}
       </div>
       {(showIssues || result) && (
         <div
-          className="absolute right-3 top-12 z-30 w-96 max-w-[calc(100vw-1.5rem)] rounded-md border bg-background p-3 text-xs shadow-lg"
+          role="dialog"
+          aria-label="Hasil pemeriksaan dan publish"
+          className="absolute right-3 top-14 z-30 w-96 max-w-[calc(100vw-1.5rem)] rounded-lg border bg-background p-4 text-xs shadow-md"
           data-testid="publish-result"
         >
           {result?.kind === 'confirm' && (
             <div data-testid="publish-confirm">
               <p className="mb-2 font-medium">Periksa sebelum publish:</p>
-              <ul className="mb-3 list-disc space-y-1 pl-4 text-amber-700">
+              <ul className="mb-3 list-disc space-y-1 pl-4 text-warning">
                 {result.warnings.map((w) => (
                   <li key={w}>{w}</li>
                 ))}
               </ul>
               <div className="flex flex-wrap items-center gap-2">
-                <button
+                <Button
                   type="button"
                   data-testid="publish-confirm-go"
-                  className="h-8 rounded bg-primary px-3 font-medium text-primary-foreground"
+                  className="h-8 px-3 text-xs"
                   onClick={() => void doPublish(true)}
                 >
                   Tetap publish
-                </button>
-                <Link
-                  href="/integrations"
-                  className="h-8 rounded border px-3 leading-8 hover:bg-accent"
-                >
-                  Buka Integrasi
-                </Link>
+                </Button>
+                <Button asChild variant="outline" className="h-8 px-3 text-xs">
+                  <Link href="/integrations">Buka Integrasi</Link>
+                </Button>
               </div>
             </div>
           )}
           {result?.kind === 'ok' && (
-            <p className="mb-2 text-emerald-700" data-testid="publish-ok">
+            <p className="mb-2 text-success" data-testid="publish-ok">
               Versi {result.version} dipublikasikan. Perangkat booth akan memperbarui tampilan.
             </p>
           )}
           {result?.kind === 'ok' && result.warning && (
-            <p className="mb-2 text-amber-700" data-testid="publish-warning">
+            <p className="mb-2 text-warning" data-testid="publish-warning">
               {result.warning}
             </p>
           )}
@@ -514,7 +548,7 @@ function Toolbar({
           )}
           <button
             type="button"
-            className="mt-2 text-muted-foreground underline"
+            className="mt-3 font-medium text-muted-foreground hover:text-foreground"
             onClick={() => {
               setShowIssues(false);
               setResult(null);
@@ -552,7 +586,11 @@ function IssueList({ issues }: { issues: ValidationIssue[] }) {
                 }
               }}
             >
-              {page && <span className="mr-1 rounded bg-muted px-1">{PAGE_LABEL[page]}</span>}
+              {page && (
+                <span className="mr-1 rounded bg-muted px-1.5 py-0.5 font-medium">
+                  {PAGE_LABEL[page]}
+                </span>
+              )}
               {page ? i.message.replace(/^Halaman [^›]+› /, '') : i.message}
             </button>
           </li>

@@ -108,7 +108,7 @@ export function PinPad({
         ) : (
           <p className={message ? 'sys-error' : 'sys-muted'}>{message ?? hint}</p>
         )}
-        <div className="sys-dots" aria-label={`${pin.length} digit`}>
+        <div className="sys-dots" role="status" aria-label={`${pin.length} digit dimasukkan`}>
           {Array.from({ length: Math.max(PIN_DOTS_MIN, pin.length) }, (_, i) => (
             <span key={i} className={i < pin.length ? 'on' : ''} />
           ))}
@@ -120,6 +120,7 @@ export function PinPad({
               type="button"
               className={`sys-btn${k === 'ok' ? ' primary' : ''}`}
               data-key={k}
+              aria-label={k === 'del' ? 'Hapus' : k === 'ok' ? 'OK' : k}
               disabled={busy || locked}
               onClick={() => press(k)}
             >

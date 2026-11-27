@@ -13,7 +13,7 @@ export const WideFields = ({ children }: { children: ReactNode }) => (
 );
 
 export const inputCls =
-  'h-8 w-full rounded border border-input bg-background px-2 text-xs focus:outline-none focus:ring-1 focus:ring-ring';
+  'h-8 w-full rounded-md border border-input bg-background px-2 text-xs shadow-xs transition-colors focus:border-ring focus:outline-none focus:ring-2 focus:ring-ring/25 disabled:bg-muted disabled:opacity-60';
 
 export function Section({
   title,
@@ -362,12 +362,13 @@ export function IconButton({
       type="button"
       title={title}
       aria-label={title}
+      aria-pressed={active}
       data-testid={testId}
       disabled={disabled}
       onClick={onClick}
       className={cn(
-        'inline-flex h-8 min-w-8 items-center justify-center rounded px-1.5 text-xs hover:bg-accent disabled:pointer-events-none disabled:opacity-40',
-        active && 'bg-accent text-accent-foreground',
+        'inline-flex h-8 min-w-8 items-center justify-center rounded-md px-1.5 text-xs text-foreground/80 transition-colors hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-40',
+        active && 'bg-primary-soft text-primary-hover hover:bg-primary-soft',
       )}
     >
       {children}

@@ -36,6 +36,21 @@ export function SystemScreen({
   return (
     <div className="sys" data-testid="system-screen" role="alert">
       <div className="sys-card">
+        <span className="sys-icon" aria-hidden>
+          <svg
+            width="28"
+            height="28"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          >
+            <path d="M12 3 2 20h20z" />
+            <path d="M12 10v4M12 17h.01" />
+          </svg>
+        </span>
         <h1>{title}</h1>
         <p>{message}</p>
         {details}
