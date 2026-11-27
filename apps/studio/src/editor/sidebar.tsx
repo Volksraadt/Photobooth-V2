@@ -1,5 +1,6 @@
 'use client';
 
+import { EyeIcon, EyeOffIcon, GripIcon, LockIcon, PlusIcon, UnlockIcon } from '@/components/icons';
 import { createId } from '@paralleldrive/cuid2';
 import {
   DEFAULT_STRIP_OVERLAY_ASSET_ID,
@@ -63,10 +64,11 @@ export function PagesList({ issues }: { issues: IssueGroups }) {
               <button
                 type="button"
                 data-testid={`page-${p}`}
+                aria-current={active ? 'page' : undefined}
                 onClick={() => store.setUi({ target: { kind: 'page', page: p }, selection: [] })}
                 className={cn(
-                  'flex w-full items-center justify-between rounded px-2 py-1 text-left text-xs hover:bg-accent',
-                  active && 'bg-accent font-medium',
+                  'flex w-full items-center justify-between rounded-md px-2 py-1.5 text-left text-xs transition-colors hover:bg-accent',
+                  active && 'bg-primary-soft font-medium text-primary-hover hover:bg-primary-soft',
                   inactive(p) && 'text-muted-foreground line-through',
                 )}
               >
@@ -260,28 +262,32 @@ export function AddElementMenu() {
       <button
         type="button"
         data-testid="add-element"
-        className="h-8 w-full rounded bg-primary px-2 text-xs font-medium text-primary-foreground"
+        aria-expanded={open}
+        className="inline-flex h-8 w-full items-center justify-center gap-1.5 rounded-md bg-primary px-2 text-xs font-medium text-primary-foreground shadow-xs transition-colors hover:bg-primary-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
         onClick={() => setOpen((o) => !o)}
       >
-        + Tambah elemen
+        <PlusIcon className="size-3.5" />
+        Tambah elemen
       </button>
       {open && (
         <div
-          className="absolute left-0 right-0 z-20 mt-1 max-h-96 overflow-auto rounded border bg-background p-2 shadow-lg"
+          className="absolute left-0 right-0 z-20 mt-1 max-h-96 overflow-auto rounded-lg border bg-background p-2 shadow-md"
           data-testid="add-element-menu"
         >
           {groups.map(
             ([title, list]) =>
               list.length > 0 && (
                 <div key={title} className="mb-2">
-                  <div className="mb-1 text-[10px] uppercase text-muted-foreground">{title}</div>
+                  <div className="mb-1 px-0.5 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
+                    {title}
+                  </div>
                   <div className="grid grid-cols-2 gap-1">
                     {list.map((t) => (
                       <button
                         key={t}
                         type="button"
                         data-testid={`add-${t}`}
-                        className="rounded border px-2 py-1 text-left text-xs hover:bg-accent"
+                        className="rounded-md border px-2 py-1.5 text-left text-xs transition-colors hover:border-primary/40 hover:bg-primary-soft"
                         onClick={() => add(t)}
                       >
                         {ELEMENT_LABEL[t]}
@@ -382,12 +388,13 @@ export function LayersPanel() {
                     }}
                     onClick={(e) => click(el.id, e.shiftKey)}
                     className={cn(
-                      'flex cursor-pointer items-center gap-1 rounded px-1 py-0.5 hover:bg-accent',
-                      selection.includes(el.id) && 'bg-primary/15',
+                      'group flex cursor-pointer items-center gap-1 rounded-md px-1 py-1 transition-colors hover:bg-accent',
+                      selection.includes(el.id) &&
+                        'bg-primary-soft text-primary-hover hover:bg-primary-soft',
                       !el.visible && 'opacity-50',
                     )}
                   >
-                    <span className="cursor-grab text-muted-foreground">⋮⋮</span>
+                    <GripIcon className="size-3.5 shrink-0 cursor-grab text-muted-foreground/60" />
                     {el.groupId && (
                       <span className="text-[9px] text-primary" title="Group">
                         ▣
@@ -400,7 +407,8 @@ export function LayersPanel() {
                       type="button"
                       title={el.visible ? 'Sembunyikan' : 'Tampilkan'}
                       data-testid={`layer-visible-${el.id}`}
-                      className="px-1 text-muted-foreground"
+                      aria-label={el.visible ? 'Sembunyikan' : 'Tampilkan'}
+                      className="rounded p-0.5 text-muted-foreground hover:text-foreground"
                       onClick={(e) => {
                         e.stopPropagation();
                         apply(el.visible ? 'Sembunyikan' : 'Tampilkan', (d, c) =>
@@ -408,13 +416,21 @@ export function LayersPanel() {
                         );
                       }}
                     >
-                      {el.visible ? '👁' : '–'}
+                      {el.visible ? (
+                        <EyeIcon className="size-3.5" />
+                      ) : (
+                        <EyeOffIcon className="size-3.5" />
+                      )}
                     </button>
                     <button
                       type="button"
                       title={el.locked ? 'Buka kunci' : 'Kunci'}
                       data-testid={`layer-lock-${el.id}`}
-                      className="px-1 text-muted-foreground"
+                      aria-label={el.locked ? 'Buka kunci' : 'Kunci'}
+                      className={cn(
+                        'rounded p-0.5 hover:text-foreground',
+                        el.locked ? 'text-foreground' : 'text-muted-foreground',
+                      )}
                       onClick={(e) => {
                         e.stopPropagation();
                         apply(el.locked ? 'Buka kunci' : 'Kunci', (d, c) =>
@@ -422,7 +438,11 @@ export function LayersPanel() {
                         );
                       }}
                     >
-                      {el.locked ? '🔒' : '🔓'}
+                      {el.locked ? (
+                        <LockIcon className="size-3.5" />
+                      ) : (
+                        <UnlockIcon className="size-3.5" />
+                      )}
                     </button>
                   </li>
                 );
@@ -611,7 +631,10 @@ export function FramesList({ issues }: { issues: IssueGroups }) {
         </div>
       )}
       {atLimit && (
-        <p className="rounded bg-amber-50 p-2 text-[11px] text-amber-800" data-testid="frame-limit">
+        <p
+          className="rounded-md bg-warning-soft p-2 text-[11px] text-warning"
+          data-testid="frame-limit"
+        >
           Paket Anda dibatasi {env.maxFrames} frame. Upgrade paket untuk menambah frame.
         </p>
       )}

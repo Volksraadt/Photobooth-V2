@@ -290,7 +290,7 @@ export function Canvas() {
         setViewportEl(n);
       }}
       data-testid="editor-viewport"
-      className="relative h-full w-full overflow-hidden bg-neutral-200 select-none"
+      className="relative h-full w-full overflow-hidden bg-slate-100 bg-[radial-gradient(circle,rgb(148_163_184/0.35)_1px,transparent_1px)] [background-size:16px_16px] select-none"
       style={{ cursor: spaceHeld ? 'grab' : undefined }}
       onPointerDownCapture={onPointerDown}
     >

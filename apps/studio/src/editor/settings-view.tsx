@@ -304,7 +304,7 @@ export function SettingsView() {
                     Simpan PIN
                   </button>
                 </div>
-                {pinMsg && <p className="text-xs text-emerald-700">{pinMsg}</p>}
+                {pinMsg && <p className="text-xs text-success">{pinMsg}</p>}
               </Section>
             </div>
           </div>
